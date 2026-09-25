@@ -11,7 +11,7 @@ scene.render.resolution_x = 800
 scene.render.resolution_y = 1000
 scene.render.resolution_percentage = 100
 scene.render.image_settings.file_format = 'PNG'
-scene.view_settings.exposure = -1.15
+scene.view_settings.exposure = -0.35
 
 def mat(name, color, rough=0.5, metallic=0.0):
     m = bpy.data.materials.new(name=name)
@@ -59,29 +59,29 @@ def look_at(obj, target):
     direction = Vector(target) - obj.location
     obj.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
 
-skin = mat('Skin', (0.34, 0.16, 0.08, 1.0), 0.62)
-skin_hi = mat('SkinHighlight', (0.55, 0.30, 0.16, 1.0), 0.56)
+skin = mat('Skin', (0.62, 0.30, 0.15, 1.0), 0.58)
+skin_hi = mat('SkinHighlight', (0.82, 0.48, 0.26, 1.0), 0.52)
 hair = mat('Hair', (0.012, 0.007, 0.004, 1.0), 0.82)
-linen = mat('LinenShirt', (0.34, 0.26, 0.17, 1.0), 0.95)
-linen_edge = mat('LinenEdge', (0.17, 0.11, 0.07, 1.0), 0.92)
-cloak = mat('DarkCloak', (0.012, 0.025, 0.032, 1.0), 0.96)
-cloak_edge = mat('CloakEdge', (0.028, 0.055, 0.064, 1.0), 0.93)
+linen = mat('LinenShirt', (0.55, 0.39, 0.22, 1.0), 0.90)
+linen_edge = mat('LinenEdge', (0.28, 0.15, 0.07, 1.0), 0.88)
+cloak = mat('DarkCloak', (0.018, 0.07, 0.105, 1.0), 0.92)
+cloak_edge = mat('CloakEdge', (0.035, 0.12, 0.16, 1.0), 0.88)
 trousers = mat('Trousers', (0.018, 0.020, 0.024, 1.0), 0.9)
-leather = mat('Leather', (0.065, 0.020, 0.008, 1.0), 0.76)
+leather = mat('Leather', (0.18, 0.055, 0.012, 1.0), 0.70)
 metal = mat('Buckle', (0.28, 0.15, 0.045, 1.0), 0.30, 0.55)
 eye = mat('Eyes', (0.006, 0.008, 0.006, 1.0), 0.3)
 ground_mat = mat('GroundMat', (0.012, 0.020, 0.013, 1.0), 1.0)
-staff_mat = mat('StaffWood', (0.09, 0.028, 0.008, 1.0), 0.92)
+staff_mat = mat('StaffWood', (0.20, 0.075, 0.018, 1.0), 0.88)
 stone_mat = mat('Stone', (0.035, 0.040, 0.032, 1.0), 1.0)
 
 root = bpy.data.objects.new('TravelerRoot', None)
 bpy.context.collection.objects.link(root)
 
-torso = cube('Torso', (0, 0, 2.45), (0.50, 0.28, 0.74), linen, 0.10)
+torso = cube('Torso', (0, 0, 2.45), (0.54, 0.29, 0.74), linen, 0.10)
 hips = cube('Hips', (0, 0, 1.72), (0.43, 0.26, 0.30), trousers, 0.08)
 
 neck = cylinder('Neck', (0, 0, 3.16), 0.14, 0.28, skin)
-head = sphere('Head', (0, -0.01, 3.58), (0.34, 0.31, 0.43), skin)
+head = sphere('Head', (0, -0.01, 3.60), (0.32, 0.30, 0.41), skin)
 sphere('Nose', (0, -0.312, 3.58), (0.062, 0.075, 0.10), skin_hi, 24)
 
 for x in (-0.105, 0.105):
@@ -123,7 +123,7 @@ cloak_back = cube('CloakBack', (0, 0.21, 2.28), (0.57, 0.055, 0.98), cloak, 0.07
 cloak_back.rotation_euler[0] = math.radians(-5)
 cube('CloakLeft', (-0.53, 0.08, 2.18), (0.13, 0.09, 0.83), cloak_edge, 0.06)
 cube('CloakRight', (0.53, 0.08, 2.18), (0.13, 0.09, 0.83), cloak_edge, 0.06)
-cube('CloakMantle', (0, 0.10, 3.01), (0.64, 0.10, 0.20), cloak, 0.10)
+cube('CloakMantle', (0, 0.10, 3.01), (0.69, 0.11, 0.21), cloak, 0.10)
 
 # staff
 staff = cylinder('Staff', (0.92, 0.03, 1.67), 0.048, 3.40, staff_mat)
@@ -153,37 +153,41 @@ world.use_nodes = True
 bg = world.node_tree.nodes.get('Background')
 if bg:
     bg.inputs[0].default_value = (0.004, 0.007, 0.010, 1.0)
-    bg.inputs[1].default_value = 0.16
+    bg.inputs[1].default_value = 0.22
 
 # restrained cinematic lighting
 bpy.ops.object.light_add(type='AREA', location=(3.0, -4.0, 5.6))
 key = bpy.context.active_object
-key.data.energy = 85
+key.data.energy = 125
 key.data.size = 4.0
+key.data.color = (1.0, 0.50, 0.28)
 look_at(key, (0,0,2.3))
 
 bpy.ops.object.light_add(type='AREA', location=(-3.2, -1.0, 3.8))
 fill = bpy.context.active_object
-fill.data.energy = 28
+fill.data.energy = 42
 fill.data.size = 3.0
+fill.data.color = (0.36, 0.48, 1.0)
 look_at(fill, (0,0,2.1))
 
 bpy.ops.object.light_add(type='AREA', location=(0.5, 3.6, 4.8))
 rim = bpy.context.active_object
-rim.data.energy = 65
+rim.data.energy = 95
 rim.data.size = 2.3
+rim.data.color = (0.20, 0.55, 1.0)
 look_at(rim, (0,0,2.7))
 
 bpy.ops.object.light_add(type='POINT', location=(0.0, -2.5, 2.4))
 front = bpy.context.active_object
-front.data.energy = 18
+front.data.energy = 26
+front.data.color = (1.0, 0.72, 0.48)
 
-bpy.ops.object.camera_add(location=(5.65, -7.15, 4.15))
+bpy.ops.object.camera_add(location=(4.8, -6.2, 3.95))
 cam = bpy.context.active_object
 cam.name = 'Camera'
-cam.data.lens = 62
+cam.data.lens = 70
 scene.camera = cam
-look_at(cam, (0,0,2.05))
+look_at(cam, (0,0,2.15))
 
 render_path = OUTPUT_DIR / 'traveler_preview.png'
 scene.render.filepath = str(render_path)
