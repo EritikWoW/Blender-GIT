@@ -262,87 +262,126 @@ shirt = create_body_shell(
     thickness=0.018,
 )
 
-vest = create_body_shell(
-    "Traveler_Vest",
-    ("spine", "shoulder"),
-    vest_mat,
-    zmin=1.42,
-    zmax=2.88,
-    clearance=0.055,
-    thickness=0.022,
-)
+def body_section_bounds(z, half_window=0.055):
+    pts = []
+    for v in body.data.vertices:
+        p = body.matrix_world @ v.co
+        if abs(p.z - z) <= half_window:
+            pts.append(p)
+    if len(pts) < 8:
+        all_pts = [body.matrix_world @ v.co for v in body.data.vertices]
+        pts = sorted(all_pts, key=lambda p: abs(p.z - z))[:64]
+    return (
+        min(p.x for p in pts), max(p.x for p in pts),
+        min(p.y for p in pts), max(p.y for p in pts)
+    )
 
-pants = create_body_shell(
-    "Traveler_Pants",
-    ("pelvis", "thigh", "shin"),
-    pants_mat,
-    zmin=0.40,
-    zmax=1.82,
-    clearance=0.045,
-    thickness=0.024,
-)
-
-boots = create_body_shell(
-    "Traveler_Boots",
-    ("shin", "foot", "toe", "heel"),
-    boots_mat,
-    zmin=0.0,
-    zmax=0.72,
-    clearance=0.060,
-    thickness=0.032,
-)
-
-def rounded_box(name, loc, dims, material, rot=(0.0,0.0,0.0), bevel=0.035):
-    bpy.ops.mesh.primitive_cube_add(location=loc, rotation=rot)
-    obj = bpy.context.active_object
-    obj.name = name
-    obj.dimensions = dims
-    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-    obj.data.materials.append(material)
-    bev = obj.modifiers.new("SoftEdges", "BEVEL")
-    bev.width = bevel
-    bev.segments = 4
-    return obj
-
-def curve_strap(name, points, bevel_depth, material):
-    curve = bpy.data.curves.new(name + "Curve", type="CURVE")
-    curve.dimensions = "3D"
-    curve.bevel_depth = bevel_depth
-    curve.bevel_resolution = 4
-    spline = curve.splines.new("BEZIER")
-    spline.bezier_points.add(len(points) - 1)
-    for bp, co in zip(spline.bezier_points, points):
-        bp.co = co
-        bp.handle_left_type = "AUTO"
-        bp.handle_right_type = "AUTO"
-    obj = bpy.data.objects.new(name, curve)
+def create_loft(name, z_levels, clearance, material, segments=36, front_bias=0.0):
+    verts = []
+    faces = []
+    for z in z_levels:
+        x0, x1, y0, y1 = body_section_bounds(z)
+        cx = (x0 + x1) * 0.5
+        cy = (y0 + y1) * 0.5 + front_bias
+        rx = max((x1 - x0) * 0.5 + clearance, 0.05)
+        ry = max((y1 - y0) * 0.5 + clearance, 0.05)
+        for i in range(segments):
+            a = 2.0 * math.pi * i / segments
+            verts.append((cx + math.cos(a)*rx, cy + math.sin(a)*ry, z))
+    rings = len(z_levels)
+    for r in range(rings - 1):
+        for i in range(segments):
+            a = r*segments + i
+            b = r*segments + (i+1)%segments
+            c = (r+1)*segments + (i+1)%segments
+            d = (r+1)*segments + i
+            faces.append((a,b,c,d))
+    mesh = bpy.data.meshes.new(name+"Mesh")
+    mesh.from_pydata(verts, [], faces)
+    mesh.update()
+    obj = bpy.data.objects.new(name, mesh)
     bpy.context.collection.objects.link(obj)
     obj.data.materials.append(material)
+    bev = obj.modifiers.new("SoftEdges","BEVEL")
+    bev.width = 0.018
+    bev.segments = 3
+    for p in obj.data.polygons:
+        p.use_smooth = True
     return obj
 
-# Wide sash around the waist. Keep it compact and close to the body.
-sash = rounded_box("Traveler_Sash", (0.0, -0.015, 1.68), (0.92, 0.56, 0.20), sash_mat, bevel=0.040)
-rounded_box("Traveler_SashEnd_A", (0.10, -0.33, 1.39), (0.13, 0.045, 0.48), sash_mat, rot=(math.radians(3),0,math.radians(8)), bevel=0.018)
-rounded_box("Traveler_SashEnd_B", (-0.03, -0.33, 1.36), (0.11, 0.042, 0.42), sash_mat, rot=(math.radians(-2),0,math.radians(-7)), bevel=0.018)
+def bone_world(name):
+    if armature and name in armature.data.bones:
+        b = armature.data.bones[name]
+        return armature.matrix_world @ b.head_local, armature.matrix_world @ b.tail_local
+    return None
 
-# Shoulder strap from reference, kept thin.
-curve_strap(
-    "Traveler_CrossBodyStrap",
-    [(-0.30,-0.365,2.75), (-0.14,-0.39,2.38), (0.08,-0.39,2.02), (0.25,-0.35,1.72)],
-    0.026,
-    strap_mat,
+def cone_between(name, p1, p2, r1, r2, material, vertices=32):
+    p1, p2 = Vector(p1), Vector(p2)
+    mid = (p1 + p2) * 0.5
+    vec = p2 - p1
+    bpy.ops.mesh.primitive_cone_add(vertices=vertices, radius1=r1, radius2=r2, depth=vec.length, location=mid)
+    obj = bpy.context.active_object
+    obj.name = name
+    obj.rotation_euler = vec.to_track_quat("Z","Y").to_euler()
+    obj.data.materials.append(material)
+    bev = obj.modifiers.new("SoftEdges","BEVEL")
+    bev.width = 0.018
+    bev.segments = 3
+    for p in obj.data.polygons:
+        p.use_smooth = True
+    return obj
+
+# Hybrid outfit: keep fitted shirt, use cleaner independent geometry for the rest.
+vest = create_loft(
+    "Traveler_Vest",
+    [1.46,1.72,2.02,2.34,2.62,2.82],
+    0.075,
+    vest_mat,
+    front_bias=0.010,
 )
 
-# Hair should frame the head, never cover the face.
-bpy.ops.mesh.primitive_uv_sphere_add(segments=36, ring_count=18, location=(0.0, 0.055, 3.40))
+# Dark open front panels give the vest a less cylindrical silhouette.
+rounded_box("Traveler_VestPanel_L", (-0.22,-0.39,2.10), (0.20,0.050,1.28), vest_mat, rot=(0,0,math.radians(2)), bevel=0.024)
+rounded_box("Traveler_VestPanel_R", (0.22,-0.39,2.10), (0.20,0.050,1.28), vest_mat, rot=(0,0,math.radians(-2)), bevel=0.024)
+
+# Loose tapered trousers from the real leg bones.
+thigh_l = bone_world("thigh.L")
+thigh_r = bone_world("thigh.R")
+shin_l = bone_world("shin.L")
+shin_r = bone_world("shin.R")
+hip_l = thigh_l[0] if thigh_l else Vector((-0.19,0,1.55))
+hip_r = thigh_r[0] if thigh_r else Vector((0.19,0,1.55))
+ankle_l = shin_l[1] if shin_l else Vector((-0.17,0,0.42))
+ankle_r = shin_r[1] if shin_r else Vector((0.17,0,0.42))
+
+pants_l = cone_between("Traveler_Pants_L", hip_l+Vector((0,0,0.05)), ankle_l+Vector((0,0,0.11)), 0.245, 0.17, pants_mat)
+pants_r = cone_between("Traveler_Pants_R", hip_r+Vector((0,0,0.05)), ankle_r+Vector((0,0,0.11)), 0.245, 0.17, pants_mat)
+
+# High boots completely cover the anatomical feet.
+for side, x in (("L",-0.17),("R",0.17)):
+    cone_between(f"Traveler_BootShaft_{side}", (x,0.0,0.14), (x,0.0,0.72), 0.19, 0.17, boots_mat)
+    rounded_box(f"Traveler_BootFoot_{side}", (x,-0.09,0.11), (0.34,0.50,0.23), boots_mat, bevel=0.055)
+
+# Remove the old body-shell pants and boots if they exist in this execution.
+for stale in ("Traveler_Pants","Traveler_Boots"):
+    obj = bpy.data.objects.get(stale)
+    if obj:
+        bpy.data.objects.remove(obj, do_unlink=True)
+
+# Compact sash and cross-body strap.
+sash = rounded_box("Traveler_Sash", (0.0,-0.015,1.68), (0.92,0.56,0.20), sash_mat, bevel=0.040)
+rounded_box("Traveler_SashEnd_A", (0.10,-0.33,1.39), (0.13,0.045,0.48), sash_mat, rot=(math.radians(3),0,math.radians(8)), bevel=0.018)
+rounded_box("Traveler_SashEnd_B", (-0.03,-0.33,1.36), (0.11,0.042,0.42), sash_mat, rot=(math.radians(-2),0,math.radians(-7)), bevel=0.018)
+curve_strap("Traveler_CrossBodyStrap", [(-0.30,-0.365,2.75),(-0.14,-0.39,2.38),(0.08,-0.39,2.02),(0.25,-0.35,1.72)], 0.026, strap_mat)
+
+# Hair cap only; remove the floating stubble until facial orientation is measured precisely.
+bpy.ops.mesh.primitive_uv_sphere_add(segments=36, ring_count=18, location=(0.0,0.055,3.40))
 hair = bpy.context.active_object
 hair.name = "Traveler_Hair"
-hair.scale = (0.305, 0.275, 0.145)
+hair.scale = (0.305,0.275,0.145)
 bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
 hair.data.materials.append(hair_mat)
-
-# Side/back locks only, no frontal beard ball.
-for x, y, z, sc in [
+for x,y,z,sc in [
     (-0.22,0.00,3.33,(0.09,0.12,0.20)),
     (0.22,0.00,3.33,(0.09,0.12,0.20)),
     (-0.17,0.08,3.30,(0.10,0.10,0.18)),
@@ -355,15 +394,7 @@ for x, y, z, sc in [
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
     lock.data.materials.append(hair_mat)
 
-# Small flattened stubble patch below the mouth, intentionally subtle.
-bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=12, location=(0.0,-0.285,3.12))
-stubble = bpy.context.active_object
-stubble.name = "Traveler_Stubble"
-stubble.scale = (0.16,0.028,0.10)
-bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-stubble.data.materials.append(hair_mat)
-
-print("traveler_outfit_created_v3", [shirt.name, vest.name, pants.name, boots.name])
+print("traveler_outfit_created_v4", [shirt.name, vest.name, pants_l.name, pants_r.name])
 
 # ------------------------------------------------------------
 # Ground / studio
