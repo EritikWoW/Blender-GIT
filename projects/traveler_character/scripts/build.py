@@ -351,11 +351,9 @@ for i, (loc, scale) in enumerate([
     ((0.10, -0.20, 3.38), (0.16, 0.10, 0.13)),
 ]):
     hb = add_hair_blob(f"Traveler_Hair_{i}", loc, scale)
-    hb.parent = root
 
 # Short beard/stubble mass under the jaw.
 beard = add_hair_blob("Traveler_Beard", (0.0, -0.245, 3.08), (0.23, 0.10, 0.15))
-beard.parent = root
 
 print("traveler_outfit_created", [shirt.name, vest.name, pants.name, boots.name, sash.name, strap.name])
 
