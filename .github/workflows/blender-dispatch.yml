@@ -47,6 +47,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $payload = Get-Content -LiteralPath command.json -Raw | ConvertFrom-Json
           $allowed = @(
+            'blender_health_check',
             'get_scene_info',
             'get_object_info',
             'get_viewport_screenshot',
@@ -58,13 +59,17 @@ jobs:
             throw "Tool is not allowed: $($payload.tool)"
           }
 
-      - name: Execute local Blender bridge
+      - name: Execute local Blender MCP
         shell: pwsh
         env:
           BLENDER_COMMAND: ${{ steps.command.outputs.payload }}
+          BLENDER_MCP_DIR: E:\GPT_Tunel\blender-codex-mcp
+          BLENDER_HOST: localhost
+          BLENDER_PORT: "9876"
+          DISABLE_TELEMETRY: "true"
         run: |
           $ErrorActionPreference = 'Stop'
-          python bridge/blender_mcp_client.py --command $env:BLENDER_COMMAND
+          uv run --with "mcp[cli]>=1.3.0" python bridge/blender_mcp_client.py --command $env:BLENDER_COMMAND
 
       - name: Upload result
         if: always()
@@ -83,7 +88,7 @@ jobs:
             let body;
             try {
               const raw = fs.readFileSync('bridge/out/result.json', 'utf8');
-              const trimmed = raw.length > 60000 ? raw.slice(0, 60000) + '\n...truncated...' : raw;
+              const trimmed = raw.length > 50000 ? raw.slice(0, 50000) + '\n...truncated; see artifact...' : raw;
               body = 'Blender bridge result for run `' + context.runId + '`:\n\n```json\n' + trimmed + '\n```';
             } catch (e) {
               body = 'Blender bridge run `' + context.runId + '` did not produce result.json. Check the Actions log.';
