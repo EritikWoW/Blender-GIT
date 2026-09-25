@@ -1,0 +1,4 @@
+bridge/out/
+__pycache__/
+*.pyc
+command.json
