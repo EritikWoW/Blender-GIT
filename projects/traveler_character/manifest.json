@@ -1,0 +1,5 @@
+{
+  "project": "traveler_character",
+  "entrypoint": "scripts/build.py",
+  "output_dir": "output"
+}
