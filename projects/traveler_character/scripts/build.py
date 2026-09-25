@@ -2,7 +2,6 @@ import bpy
 import math
 from mathutils import Vector
 
-# Clean scene
 bpy.ops.object.select_all(action='SELECT')
 bpy.ops.object.delete(use_global=False)
 
@@ -12,8 +11,8 @@ scene.render.resolution_x = 800
 scene.render.resolution_y = 1000
 scene.render.resolution_percentage = 100
 scene.render.image_settings.file_format = 'PNG'
+scene.view_settings.exposure = -1.15
 
-# ---------- helpers ----------
 def mat(name, color, rough=0.5, metallic=0.0):
     m = bpy.data.materials.new(name=name)
     m.use_nodes = True
@@ -24,7 +23,7 @@ def mat(name, color, rough=0.5, metallic=0.0):
         bsdf.inputs['Metallic'].default_value = metallic
     return m
 
-def cube(name, loc, scale, material, bevel=0.08):
+def cube(name, loc, scale, material, bevel=0.06):
     bpy.ops.mesh.primitive_cube_add(location=loc)
     o = bpy.context.active_object
     o.name = name
@@ -38,8 +37,8 @@ def cube(name, loc, scale, material, bevel=0.08):
         o.data.materials.append(material)
     return o
 
-def sphere(name, loc, scale, material):
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=32, ring_count=16, location=loc)
+def sphere(name, loc, scale, material, segments=32):
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=segments, ring_count=max(12, segments//2), location=loc)
     o = bpy.context.active_object
     o.name = name
     o.scale = scale
@@ -48,8 +47,8 @@ def sphere(name, loc, scale, material):
         o.data.materials.append(material)
     return o
 
-def cylinder(name, loc, radius, depth, material, rotation=(0,0,0)):
-    bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=radius, depth=depth, location=loc, rotation=rotation)
+def cylinder(name, loc, radius, depth, material, rotation=(0,0,0), vertices=24):
+    bpy.ops.mesh.primitive_cylinder_add(vertices=vertices, radius=radius, depth=depth, location=loc, rotation=rotation)
     o = bpy.context.active_object
     o.name = name
     if material:
@@ -60,87 +59,92 @@ def look_at(obj, target):
     direction = Vector(target) - obj.location
     obj.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
 
-# ---------- palette ----------
-skin = mat('Skin', (0.58, 0.34, 0.22, 1.0), 0.58)
-skin_light = mat('SkinLight', (0.72, 0.48, 0.33, 1.0), 0.55)
-hair = mat('Hair', (0.035, 0.022, 0.018, 1.0), 0.8)
-linen = mat('LinenShirt', (0.58, 0.50, 0.39, 1.0), 0.9)
-cloak = mat('DarkCloak', (0.045, 0.06, 0.07, 1.0), 0.92)
-trousers = mat('Trousers', (0.07, 0.075, 0.08, 1.0), 0.86)
-leather = mat('Leather', (0.13, 0.055, 0.025, 1.0), 0.72)
-metal = mat('Buckle', (0.35, 0.26, 0.12, 1.0), 0.32, 0.55)
-eye = mat('Eyes', (0.02, 0.025, 0.02, 1.0), 0.35)
-ground_mat = mat('GroundMat', (0.035, 0.045, 0.035, 1.0), 1.0)
-staff_mat = mat('StaffWood', (0.17, 0.08, 0.035, 1.0), 0.9)
+skin = mat('Skin', (0.34, 0.16, 0.08, 1.0), 0.62)
+skin_hi = mat('SkinHighlight', (0.55, 0.30, 0.16, 1.0), 0.56)
+hair = mat('Hair', (0.012, 0.007, 0.004, 1.0), 0.82)
+linen = mat('LinenShirt', (0.34, 0.26, 0.17, 1.0), 0.95)
+linen_edge = mat('LinenEdge', (0.17, 0.11, 0.07, 1.0), 0.92)
+cloak = mat('DarkCloak', (0.012, 0.025, 0.032, 1.0), 0.96)
+cloak_edge = mat('CloakEdge', (0.028, 0.055, 0.064, 1.0), 0.93)
+trousers = mat('Trousers', (0.018, 0.020, 0.024, 1.0), 0.9)
+leather = mat('Leather', (0.065, 0.020, 0.008, 1.0), 0.76)
+metal = mat('Buckle', (0.28, 0.15, 0.045, 1.0), 0.30, 0.55)
+eye = mat('Eyes', (0.006, 0.008, 0.006, 1.0), 0.3)
+ground_mat = mat('GroundMat', (0.012, 0.020, 0.013, 1.0), 1.0)
+staff_mat = mat('StaffWood', (0.09, 0.028, 0.008, 1.0), 0.92)
+stone_mat = mat('Stone', (0.035, 0.040, 0.032, 1.0), 1.0)
 
-# ---------- body ----------
 root = bpy.data.objects.new('TravelerRoot', None)
 bpy.context.collection.objects.link(root)
 
-torso = cube('Torso', (0, 0, 2.45), (0.48, 0.28, 0.72), linen, 0.12)
-hips = cube('Hips', (0, 0, 1.72), (0.42, 0.26, 0.30), trousers, 0.10)
+torso = cube('Torso', (0, 0, 2.45), (0.50, 0.28, 0.74), linen, 0.10)
+hips = cube('Hips', (0, 0, 1.72), (0.43, 0.26, 0.30), trousers, 0.08)
 
-neck = cylinder('Neck', (0, 0, 3.16), 0.14, 0.30, skin)
-head = sphere('Head', (0, 0, 3.58), (0.36, 0.32, 0.44), skin)
+neck = cylinder('Neck', (0, 0, 3.16), 0.14, 0.28, skin)
+head = sphere('Head', (0, -0.01, 3.58), (0.34, 0.31, 0.43), skin)
+sphere('Nose', (0, -0.312, 3.58), (0.062, 0.075, 0.10), skin_hi, 24)
 
-# nose
-nose = sphere('Nose', (0, -0.315, 3.58), (0.075, 0.075, 0.12), skin_light)
-# eyes
-for x in (-0.115, 0.115):
-    sphere('Eye', (x, -0.292, 3.66), (0.042, 0.025, 0.035), eye)
+for x in (-0.105, 0.105):
+    sphere('Eye', (x, -0.294, 3.66), (0.034, 0.019, 0.027), eye, 20)
 
-# hair cap + side hair
-hair_cap = sphere('HairCap', (0, 0.02, 3.86), (0.39, 0.34, 0.23), hair)
-cube('HairSideL', (-0.29, 0.02, 3.63), (0.08, 0.20, 0.25), hair, 0.05)
-cube('HairSideR', (0.29, 0.02, 3.63), (0.08, 0.20, 0.25), hair, 0.05)
-# beard / stubble block
-beard = sphere('Beard', (0, -0.02, 3.41), (0.30, 0.29, 0.22), hair)
+# hair with visible forehead
+sphere('HairCap', (0, 0.035, 3.84), (0.37, 0.33, 0.20), hair)
+cube('HairSideL', (-0.285, 0.045, 3.64), (0.065, 0.17, 0.22), hair, 0.04)
+cube('HairSideR', (0.285, 0.045, 3.64), (0.065, 0.17, 0.22), hair, 0.04)
+# compact beard and moustache
+sphere('Beard', (0, 0.005, 3.39), (0.27, 0.27, 0.17), hair, 28)
+cube('Moustache', (0, -0.298, 3.51), (0.16, 0.022, 0.035), hair, 0.025)
 
-# legs
-leg_l = cylinder('LegL', (-0.20, 0, 1.08), 0.17, 1.20, trousers)
-leg_r = cylinder('LegR', (0.20, 0, 1.08), 0.17, 1.20, trousers)
+# legs and boots
+cylinder('LegL', (-0.20, 0, 1.08), 0.16, 1.20, trousers)
+cylinder('LegR', (0.20, 0, 1.08), 0.16, 1.20, trousers)
+cube('BootL', (-0.20, -0.08, 0.42), (0.20, 0.31, 0.19), leather, 0.07)
+cube('BootR', (0.20, -0.08, 0.42), (0.20, 0.31, 0.19), leather, 0.07)
 
-# boots
-boot_l = cube('BootL', (-0.20, -0.07, 0.42), (0.20, 0.33, 0.20), leather, 0.08)
-boot_r = cube('BootR', (0.20, -0.07, 0.42), (0.20, 0.33, 0.20), leather, 0.08)
+# arms slightly asymmetric
+arm_l = cylinder('ArmL', (-0.61, 0.01, 2.43), 0.145, 1.20, linen, rotation=(0, math.radians(8), math.radians(-3)))
+arm_r = cylinder('ArmR', (0.62, 0.01, 2.43), 0.145, 1.20, linen, rotation=(0, math.radians(-13), math.radians(3)))
+sphere('HandL', (-0.69, -0.01, 1.82), (0.14, 0.12, 0.16), skin)
+sphere('HandR', (0.72, -0.01, 1.80), (0.14, 0.12, 0.16), skin)
 
-# arms
-arm_l = cylinder('ArmL', (-0.62, 0.0, 2.42), 0.15, 1.25, linen, rotation=(0, math.radians(7), 0))
-arm_r = cylinder('ArmR', (0.62, 0.0, 2.42), 0.15, 1.25, linen, rotation=(0, math.radians(-10), 0))
+# belt and buckle
+cylinder('Belt', (0, 0, 1.84), 0.50, 0.13, leather, rotation=(math.radians(90), 0, 0))
+cube('Buckle', (0, -0.305, 1.84), (0.095, 0.030, 0.085), metal, 0.02)
 
-hand_l = sphere('HandL', (-0.70, 0.0, 1.79), (0.15, 0.13, 0.17), skin)
-hand_r = sphere('HandR', (0.72, 0.0, 1.78), (0.15, 0.13, 0.17), skin)
+# shirt neck opening and lacing
+cube('CollarL', (-0.12, -0.292, 2.97), (0.055, 0.025, 0.18), linen_edge, 0.02)
+cube('CollarR', (0.12, -0.292, 2.97), (0.055, 0.025, 0.18), linen_edge, 0.02)
+for i, z in enumerate((2.91, 2.82, 2.73)):
+    lace = cube(f'Lace{i}', (0, -0.322, z), (0.15, 0.012, 0.014), leather, 0.008)
+    lace.rotation_euler[1] = math.radians(16 if i % 2 == 0 else -16)
 
-# belt
-belt = cylinder('Belt', (0, 0, 1.84), 0.50, 0.16, leather, rotation=(math.radians(90), 0, 0))
-buckle = cube('Buckle', (0, -0.305, 1.84), (0.10, 0.035, 0.095), metal, 0.025)
+# cloak panels
+cloak_back = cube('CloakBack', (0, 0.21, 2.28), (0.57, 0.055, 0.98), cloak, 0.07)
+cloak_back.rotation_euler[0] = math.radians(-5)
+cube('CloakLeft', (-0.53, 0.08, 2.18), (0.13, 0.09, 0.83), cloak_edge, 0.06)
+cube('CloakRight', (0.53, 0.08, 2.18), (0.13, 0.09, 0.83), cloak_edge, 0.06)
+cube('CloakMantle', (0, 0.10, 3.01), (0.64, 0.10, 0.20), cloak, 0.10)
 
-# cloak: back panel + shoulder mantle
-cloak_back = cube('CloakBack', (0, 0.18, 2.27), (0.55, 0.06, 0.95), cloak, 0.09)
-cloak_back.rotation_euler[0] = math.radians(-4)
-mantle = cube('CloakMantle', (0, 0.10, 3.00), (0.62, 0.10, 0.23), cloak, 0.12)
+# staff
+staff = cylinder('Staff', (0.92, 0.03, 1.67), 0.048, 3.40, staff_mat)
+staff.rotation_euler[1] = math.radians(-5)
+sphere('StaffTop', (0.78, 0.03, 3.35), (0.09, 0.09, 0.12), staff_mat, 20)
 
-# staff in right hand
-staff = cylinder('Staff', (0.92, 0.02, 1.65), 0.055, 3.30, staff_mat)
-staff.rotation_euler[1] = math.radians(-4)
-
-# parent character pieces
 for obj in list(bpy.context.scene.objects):
-    if obj is not root and obj.type in {'MESH'} and obj.name != 'Ground':
+    if obj is not root and obj.type == 'MESH':
         obj.parent = root
 
-# ---------- ground ----------
+# ground
 bpy.ops.mesh.primitive_plane_add(size=16, location=(0,0,0))
 ground = bpy.context.active_object
 ground.name = 'Ground'
 ground.data.materials.append(ground_mat)
+ground.parent = None
 
-# small stones
-stone_mat = mat('Stone', (0.09, 0.095, 0.08, 1.0), 1.0)
 for i, (x,y,s) in enumerate([(-1.8,0.9,0.22),(1.5,1.1,0.18),(-1.1,-0.8,0.15),(1.9,-0.6,0.20)]):
-    o = sphere(f'Stone_{i}', (x,y,s*0.55), (s, s*0.8, s*0.55), stone_mat)
+    o = sphere(f'Stone_{i}', (x,y,s*0.55), (s, s*0.8, s*0.55), stone_mat, 20)
+    o.parent = None
 
-# ---------- lighting ----------
 world = scene.world
 if world is None:
     world = bpy.data.worlds.new('World')
@@ -148,36 +152,39 @@ if world is None:
 world.use_nodes = True
 bg = world.node_tree.nodes.get('Background')
 if bg:
-    bg.inputs[0].default_value = (0.008, 0.012, 0.018, 1.0)
-    bg.inputs[1].default_value = 0.35
+    bg.inputs[0].default_value = (0.004, 0.007, 0.010, 1.0)
+    bg.inputs[1].default_value = 0.16
 
-bpy.ops.object.light_add(type='AREA', location=(3.2, -4.2, 5.8))
+# restrained cinematic lighting
+bpy.ops.object.light_add(type='AREA', location=(3.0, -4.0, 5.6))
 key = bpy.context.active_object
-key.data.energy = 1100
+key.data.energy = 85
 key.data.size = 4.0
-look_at(key, (0,0,2.2))
+look_at(key, (0,0,2.3))
 
-bpy.ops.object.light_add(type='AREA', location=(-3.5, -1.2, 3.8))
+bpy.ops.object.light_add(type='AREA', location=(-3.2, -1.0, 3.8))
 fill = bpy.context.active_object
-fill.data.energy = 500
+fill.data.energy = 28
 fill.data.size = 3.0
-look_at(fill, (0,0,2.0))
+look_at(fill, (0,0,2.1))
 
-bpy.ops.object.light_add(type='AREA', location=(0.5, 3.8, 4.8))
+bpy.ops.object.light_add(type='AREA', location=(0.5, 3.6, 4.8))
 rim = bpy.context.active_object
-rim.data.energy = 900
-rim.data.size = 2.5
+rim.data.energy = 65
+rim.data.size = 2.3
 look_at(rim, (0,0,2.7))
 
-# ---------- camera ----------
-bpy.ops.object.camera_add(location=(5.9, -7.4, 4.25))
+bpy.ops.object.light_add(type='POINT', location=(0.0, -2.5, 2.4))
+front = bpy.context.active_object
+front.data.energy = 18
+
+bpy.ops.object.camera_add(location=(5.65, -7.15, 4.15))
 cam = bpy.context.active_object
 cam.name = 'Camera'
-cam.data.lens = 58
+cam.data.lens = 62
 scene.camera = cam
 look_at(cam, (0,0,2.05))
 
-# ---------- render/save ----------
 render_path = OUTPUT_DIR / 'traveler_preview.png'
 scene.render.filepath = str(render_path)
 bpy.ops.render.render(write_still=True)
@@ -185,4 +192,4 @@ bpy.ops.render.render(write_still=True)
 blend_path = OUTPUT_DIR / 'traveler_character.blend'
 bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
 
-print('traveler_character_done', render_path, blend_path)
+print('traveler_character_v2_done', render_path, blend_path)
