@@ -291,6 +291,13 @@ shirt_arms = shell_from_body(
     shirt_mat,0.045,0.020
 )
 
+shirt_yoke = shell_from_body(
+    "Traveler_ShirtYoke",
+    ("shoulder",),
+    2.45,2.98,
+    shirt_mat,0.045,0.020
+)
+
 # Rolled sleeve cuffs.
 for side in ("L","R"):
     fore=bone_world(f"forearm.{side}")
@@ -300,10 +307,33 @@ for side in ("L","R"):
         axis=(elbow-wrist).normalized()
         cone_between(f"Traveler_Cuff_{side}",p-axis*0.055,p+axis*0.055,0.145,0.145,shirt_mat)
 
-# Vest: clean front panels + back panel shrinkwrapped onto the torso, no blanket/cylinder.
-panel_grid("Traveler_VestFront_L",-0.43,-0.055,1.48,2.78,-0.43,vest_mat,front=True)
-panel_grid("Traveler_VestFront_R",0.055,0.43,1.48,2.78,-0.43,vest_mat,front=True)
-panel_grid("Traveler_VestBack",-0.43,0.43,1.48,2.78,0.43,vest_mat,front=False)
+# Vest: fitted body shell with a clean open center, not flat boards.
+vest = shell_from_body(
+    "Traveler_Vest",
+    ("spine","shoulder"),
+    1.46,2.82,
+    vest_mat,0.065,0.024,
+    front_v_cut=False
+)
+
+# Cut a vertical opening through the front half of the vest.
+rounded_box("Traveler_VestCutter",(0.0,-0.32,2.14),(0.17,0.58,1.38),ground_mat,bevel=0.0)
+vest_cutter=bpy.context.active_object
+vest_cutter.hide_render=True
+bool_mod=vest.modifiers.new("OpenFront","BOOLEAN")
+bool_mod.operation="DIFFERENCE"
+bool_mod.solver="EXACT"
+bool_mod.object=vest_cutter
+
+# Add a shallow V at the collar using two angled cutters.
+for idx,(x,ang) in enumerate(((-0.08,34),(0.08,-34))):
+    rounded_box(f"Traveler_VestNeckCutter_{idx}",(x,-0.31,2.69),(0.16,0.55,0.58),ground_mat,rot=(0,math.radians(ang),0),bevel=0.0)
+    cutter=bpy.context.active_object
+    cutter.hide_render=True
+    bm=vest.modifiers.new(f"NeckCut_{idx}","BOOLEAN")
+    bm.operation="DIFFERENCE"
+    bm.solver="EXACT"
+    bm.object=cutter
 
 # Pants: 2-segment loose trousers on each leg.
 for side in ("L","R"):
