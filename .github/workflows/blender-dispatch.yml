@@ -1,6 +1,10 @@
 name: Blender command dispatcher
 
 on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/blender-dispatch.yml"
   issue_comment:
     types: [created]
 
@@ -9,8 +13,15 @@ permissions:
   issues: write
 
 jobs:
+  workflow-smoke:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Blender dispatcher workflow is active"
+
   dispatch:
     if: >
+      github.event_name == 'issue_comment' &&
       github.event.issue.number == 1 &&
       github.event.comment.user.login == github.repository_owner &&
       startsWith(github.event.comment.body, '/blender ')
