@@ -1,0 +1,5 @@
+{
+  "project": "_template",
+  "entrypoint": "scripts/build.py",
+  "output_dir": "output"
+}
