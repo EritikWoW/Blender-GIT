@@ -6,6 +6,7 @@ import base64
 import json
 import os
 from pathlib import Path
+import re
 import sys
 from typing import Any
 
@@ -18,6 +19,10 @@ DEFAULT_MCP_DIR = os.environ.get(
     "BLENDER_MCP_DIR",
     r"E:\GPT_Tunel\blender-codex-mcp",
 )
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+PROJECTS_ROOT = REPO_ROOT / "projects"
+PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def _write_result(result: Any, out_path: Path) -> dict[str, Any]:
@@ -47,15 +52,33 @@ def _write_result(result: Any, out_path: Path) -> dict[str, Any]:
     return payload
 
 
+async def _call_execute_code(session: ClientSession, code: str):
+    return await session.call_tool(
+        "execute_blender_code",
+        arguments={"code": code},
+    )
+
+
+def _safe_project_dir(project_name: str) -> Path:
+    if not PROJECT_NAME_RE.fullmatch(project_name):
+        raise ValueError("project name may contain only letters, numbers, dot, underscore and dash")
+
+    project_dir = (PROJECTS_ROOT / project_name).resolve()
+    projects_root = PROJECTS_ROOT.resolve()
+
+    if project_dir.parent != projects_root:
+        raise ValueError("invalid project path")
+
+    return project_dir
+
+
 async def _render_scene_preview(
     session: ClientSession,
     out_path: Path,
     args: dict[str, Any],
 ) -> dict[str, Any]:
-    width = int(args.get("width", 800))
-    height = int(args.get("height", 450))
-    width = max(64, min(width, 1920))
-    height = max(64, min(height, 1080))
+    width = max(64, min(int(args.get("width", 800)), 1920))
+    height = max(64, min(int(args.get("height", 450)), 1080))
 
     image_path = (out_path.parent / "render.png").resolve()
     image_path.parent.mkdir(parents=True, exist_ok=True)
@@ -77,10 +100,7 @@ bpy.ops.render.render(write_still=True)
 print('render_saved', scene.render.filepath)
 """
 
-    result = await session.call_tool(
-        "execute_blender_code",
-        arguments={"code": code},
-    )
+    result = await _call_execute_code(session, code)
 
     if not image_path.exists():
         raise RuntimeError(f"Blender render did not create {image_path}")
@@ -106,10 +126,92 @@ print('render_saved', scene.render.filepath)
         "is_error": False,
         "result_type": "complete",
     }
-    out_path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return payload
+
+
+async def _run_project(
+    session: ClientSession,
+    out_path: Path,
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    project_name = str(args.get("project", "")).strip()
+    if not project_name:
+        raise ValueError("run_project requires 'project'")
+
+    project_dir = _safe_project_dir(project_name)
+    manifest_path = project_dir / "manifest.json"
+
+    if not project_dir.exists():
+        raise FileNotFoundError(f"Project not found: {project_dir}")
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"manifest.json not found: {manifest_path}")
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    entrypoint_rel = str(manifest.get("entrypoint", "scripts/build.py"))
+    entrypoint_path = (project_dir / entrypoint_rel).resolve()
+    if project_dir not in entrypoint_path.parents:
+        raise ValueError("entrypoint must stay inside project directory")
+    if not entrypoint_path.exists():
+        raise FileNotFoundError(f"Entrypoint not found: {entrypoint_path}")
+
+    output_rel = str(manifest.get("output_dir", "output"))
+    output_dir = (project_dir / output_rel).resolve()
+    if project_dir not in output_dir.parents:
+        raise ValueError("output_dir must stay inside project directory")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    script_code = entrypoint_path.read_text(encoding="utf-8")
+
+    bootstrap = f"""
+from pathlib import Path
+import os
+
+PROJECT_DIR = Path({str(project_dir)!r})
+ASSETS_DIR = PROJECT_DIR / "assets"
+TEXTURES_DIR = ASSETS_DIR / "textures"
+MODELS_DIR = ASSETS_DIR / "models"
+REFERENCES_DIR = ASSETS_DIR / "references"
+OUTPUT_DIR = Path({str(output_dir)!r})
+
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+print("PROJECT_DIR", PROJECT_DIR)
+print("OUTPUT_DIR", OUTPUT_DIR)
+"""
+
+    result = await _call_execute_code(session, bootstrap + "\n" + script_code)
+    detail = result.model_dump(mode="json") if hasattr(result, "model_dump") else result
+
+    produced_files = [
+        str(p.relative_to(project_dir)).replace("\\", "/")
+        for p in sorted(output_dir.rglob("*"))
+        if p.is_file()
+    ]
+
+    payload = {
+        "meta": {
+            "bridge_tool": "run_project",
+            "project": project_name,
+            "project_dir": str(project_dir),
+            "entrypoint": str(entrypoint_path),
+            "output_dir": str(output_dir),
+        },
+        "content": [
+            {
+                "type": "text",
+                "text": f"Project '{project_name}' executed successfully.",
+            }
+        ],
+        "mcp_result": detail,
+        "produced_files": produced_files,
+        "is_error": False,
+        "result_type": "complete",
+    }
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return payload
 
 
@@ -136,6 +238,8 @@ async def run(command: BlenderCommand, mcp_dir: str, out_path: Path) -> int:
 
             if command.tool == "render_scene_preview":
                 payload = await _render_scene_preview(session, out_path, command.args)
+            elif command.tool == "run_project":
+                payload = await _run_project(session, out_path, command.args)
             else:
                 result = await session.call_tool(command.tool, arguments=command.args)
                 payload = _write_result(result, out_path)
