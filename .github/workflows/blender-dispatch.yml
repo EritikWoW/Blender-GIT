@@ -63,6 +63,7 @@ jobs:
             'get_object_info',
             'get_viewport_screenshot',
             'render_scene_preview',
+            'run_project',
             'execute_blender_code',
             'export_glb'
           )
@@ -88,7 +89,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: blender-result-${{ github.run_id }}
-          path: bridge/out
+          path: |
+            bridge/out
+            projects/**/output/**
           if-no-files-found: warn
 
       - name: Comment result
