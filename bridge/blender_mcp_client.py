@@ -47,6 +47,72 @@ def _write_result(result: Any, out_path: Path) -> dict[str, Any]:
     return payload
 
 
+async def _render_scene_preview(
+    session: ClientSession,
+    out_path: Path,
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    width = int(args.get("width", 800))
+    height = int(args.get("height", 450))
+    width = max(64, min(width, 1920))
+    height = max(64, min(height, 1080))
+
+    image_path = (out_path.parent / "render.png").resolve()
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+
+    code = f"""
+import bpy
+
+scene = bpy.context.scene
+scene.render.resolution_x = {width}
+scene.render.resolution_y = {height}
+scene.render.resolution_percentage = 100
+scene.render.image_settings.file_format = 'PNG'
+scene.render.filepath = {str(image_path)!r}
+
+if scene.camera is None:
+    raise RuntimeError('Scene has no active camera')
+
+bpy.ops.render.render(write_still=True)
+print('render_saved', scene.render.filepath)
+"""
+
+    result = await session.call_tool(
+        "execute_blender_code",
+        arguments={"code": code},
+    )
+
+    if not image_path.exists():
+        raise RuntimeError(f"Blender render did not create {image_path}")
+
+    detail = result.model_dump(mode="json") if hasattr(result, "model_dump") else result
+    payload = {
+        "meta": {"bridge_tool": "render_scene_preview"},
+        "content": [
+            {
+                "type": "image",
+                "mime_type": "image/png",
+                "data": None,
+                "saved_file": image_path.name,
+                "width": width,
+                "height": height,
+            },
+            {
+                "type": "text",
+                "text": "Rendered active Blender camera to render.png",
+            },
+        ],
+        "mcp_result": detail,
+        "is_error": False,
+        "result_type": "complete",
+    }
+    out_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return payload
+
+
 async def run(command: BlenderCommand, mcp_dir: str, out_path: Path) -> int:
     server = StdioServerParameters(
         command="uv",
@@ -67,9 +133,13 @@ async def run(command: BlenderCommand, mcp_dir: str, out_path: Path) -> int:
     async with stdio_client(server) as (read_stream, write_stream):
         async with ClientSession(read_stream, write_stream) as session:
             await session.initialize()
-            result = await session.call_tool(command.tool, arguments=command.args)
 
-    payload = _write_result(result, out_path)
+            if command.tool == "render_scene_preview":
+                payload = await _render_scene_preview(session, out_path, command.args)
+            else:
+                result = await session.call_tool(command.tool, arguments=command.args)
+                payload = _write_result(result, out_path)
+
     print(json.dumps(payload, ensure_ascii=False))
     return 0
 
