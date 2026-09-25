@@ -153,6 +153,205 @@ if dims.z < max(dims.x, dims.y) * 0.70:
     bpy.context.view_layer.update()
 
 # ------------------------------------------------------------
+# Traveler outfit generated from the real rigged body
+# ------------------------------------------------------------
+body_candidates = [o for o in imported if o.type == "MESH"]
+if not body_candidates:
+    raise RuntimeError("Humanoid asset contains no mesh body")
+body = max(body_candidates, key=lambda o: len(o.data.polygons) if o.data else 0)
+
+armature = None
+for mod in body.modifiers:
+    if mod.type == "ARMATURE" and getattr(mod, "object", None):
+        armature = mod.object
+        break
+if armature is None and body.parent and body.parent.type == "ARMATURE":
+    armature = body.parent
+
+print("traveler_body", body.name, "armature", armature.name if armature else None)
+
+skin_mat = make_mat("Traveler_Skin", (0.38, 0.16, 0.085, 1.0), 0.62)
+shirt_mat = make_mat("Traveler_Linen", (0.63, 0.55, 0.40, 1.0), 0.93)
+vest_mat = make_mat("Traveler_Vest", (0.12, 0.075, 0.045, 1.0), 0.92)
+pants_mat = make_mat("Traveler_Pants", (0.055, 0.050, 0.050, 1.0), 0.94)
+boots_mat = make_mat("Traveler_Boots", (0.11, 0.050, 0.022, 1.0), 0.82)
+sash_mat = make_mat("Traveler_Sash", (0.16, 0.075, 0.035, 1.0), 0.90)
+strap_mat = make_mat("Traveler_Strap", (0.10, 0.045, 0.020, 1.0), 0.78)
+hair_mat = make_mat("Traveler_Hair", (0.018, 0.010, 0.006, 1.0), 0.82)
+
+body.data.materials.clear()
+body.data.materials.append(skin_mat)
+
+group_names = {vg.index: vg.name for vg in body.vertex_groups}
+
+def matches_group(name, prefixes):
+    return any(name == p or name.startswith(p) for p in prefixes)
+
+def create_shell(name, prefixes, material, zmin=None, zmax=None, offset=0.018, thickness=0.014):
+    obj = body.copy()
+    obj.data = body.data.copy()
+    obj.name = name
+    bpy.context.collection.objects.link(obj)
+
+    obj.data.materials.clear()
+    obj.data.materials.append(material)
+
+    mask_group = obj.vertex_groups.new(name="OutfitMask")
+    keep = []
+    for v in body.data.vertices:
+        world_z = (body.matrix_world @ v.co).z
+        if zmin is not None and world_z < zmin:
+            continue
+        if zmax is not None and world_z > zmax:
+            continue
+        ok = False
+        for g in v.groups:
+            gn = group_names.get(g.group, "")
+            if matches_group(gn, prefixes) and g.weight > 0.12:
+                ok = True
+                break
+        if ok:
+            keep.append(v.index)
+
+    if not keep:
+        bpy.data.objects.remove(obj, do_unlink=True)
+        raise RuntimeError(f"No vertices selected for outfit shell {name}")
+
+    mask_group.add(keep, 1.0, "REPLACE")
+
+    mask = obj.modifiers.new("OutfitMask", "MASK")
+    mask.vertex_group = mask_group.name
+    obj.modifiers.move(len(obj.modifiers) - 1, 0)
+
+    shrink = obj.modifiers.new("BodyClearance", "SHRINKWRAP")
+    shrink.target = body
+    shrink.wrap_method = "NEAREST_SURFACEPOINT"
+    shrink.wrap_mode = "OUTSIDE"
+    shrink.offset = offset
+
+    solid = obj.modifiers.new("ClothThickness", "SOLIDIFY")
+    solid.thickness = thickness
+    solid.offset = 1.0
+
+    smooth = obj.modifiers.new("ClothSmooth", "SMOOTH")
+    smooth.factor = 0.35
+    smooth.iterations = 2
+
+    return obj
+
+shirt = create_shell(
+    "Traveler_Shirt",
+    ("spine", "shoulder", "upper_arm", "forearm"),
+    shirt_mat,
+    zmin=1.20,
+    zmax=3.02,
+    offset=0.020,
+    thickness=0.018,
+)
+
+vest = create_shell(
+    "Traveler_Vest",
+    ("spine", "shoulder"),
+    vest_mat,
+    zmin=1.42,
+    zmax=2.90,
+    offset=0.042,
+    thickness=0.022,
+)
+
+pants = create_shell(
+    "Traveler_Pants",
+    ("pelvis", "thigh", "shin"),
+    pants_mat,
+    zmin=0.48,
+    zmax=1.82,
+    offset=0.024,
+    thickness=0.020,
+)
+
+boots = create_shell(
+    "Traveler_Boots",
+    ("shin", "foot", "toe", "heel"),
+    boots_mat,
+    zmin=0.0,
+    zmax=0.78,
+    offset=0.040,
+    thickness=0.030,
+)
+
+def add_box(name, loc, dims, material, rotation=(0.0, 0.0, 0.0), bevel=0.025):
+    bpy.ops.mesh.primitive_cube_add(location=loc, rotation=rotation)
+    obj = bpy.context.active_object
+    obj.name = name
+    obj.dimensions = dims
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    obj.data.materials.append(material)
+    bev = obj.modifiers.new("SoftEdges", "BEVEL")
+    bev.width = bevel
+    bev.segments = 3
+    return obj
+
+# Wide wrapped sash, hanging cloth ends, and diagonal leather strap.
+sash = add_box("Traveler_Sash", (0.0, -0.01, 1.70), (0.92, 0.54, 0.22), sash_mat, bevel=0.035)
+sash.parent = root
+
+sash_end_a = add_box(
+    "Traveler_SashEnd_A",
+    (0.15, -0.30, 1.35),
+    (0.16, 0.055, 0.62),
+    sash_mat,
+    rotation=(math.radians(4), math.radians(-5), math.radians(10)),
+    bevel=0.018,
+)
+sash_end_a.parent = root
+
+sash_end_b = add_box(
+    "Traveler_SashEnd_B",
+    (-0.03, -0.29, 1.31),
+    (0.13, 0.050, 0.55),
+    sash_mat,
+    rotation=(math.radians(-3), math.radians(5), math.radians(-8)),
+    bevel=0.018,
+)
+sash_end_b.parent = root
+
+strap = add_box(
+    "Traveler_CrossBodyStrap",
+    (0.03, -0.39, 2.18),
+    (0.11, 0.055, 1.62),
+    strap_mat,
+    rotation=(0.0, math.radians(7), math.radians(-24)),
+    bevel=0.018,
+)
+strap.parent = root
+
+# A few overlapping ellipsoids form a stylized dark hair mass.
+def add_hair_blob(name, loc, scale):
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=12, location=loc)
+    o = bpy.context.active_object
+    o.name = name
+    o.scale = scale
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    o.data.materials.append(hair_mat)
+    return o
+
+for i, (loc, scale) in enumerate([
+    ((0.00, 0.015, 3.39), (0.34, 0.30, 0.20)),
+    ((-0.20, -0.015, 3.33), (0.18, 0.20, 0.23)),
+    ((0.20, -0.010, 3.33), (0.18, 0.20, 0.23)),
+    ((-0.10, -0.20, 3.38), (0.16, 0.10, 0.13)),
+    ((0.10, -0.20, 3.38), (0.16, 0.10, 0.13)),
+]):
+    hb = add_hair_blob(f"Traveler_Hair_{i}", loc, scale)
+    hb.parent = root
+
+# Short beard/stubble mass under the jaw.
+beard = add_hair_blob("Traveler_Beard", (0.0, -0.245, 3.08), (0.23, 0.10, 0.15))
+beard.parent = root
+
+print("traveler_outfit_created", [shirt.name, vest.name, pants.name, boots.name, sash.name, strap.name])
+
+# ------------------------------------------------------------
 # Ground / studio
 # ------------------------------------------------------------
 def make_mat(name, color, roughness=0.7):
@@ -222,11 +421,11 @@ look_at(cam, (0, 0, 1.75))
 # ------------------------------------------------------------
 # Save and render
 # ------------------------------------------------------------
-render_path = OUTPUT_DIR / "traveler_preview.png"
+render_path = OUTPUT_DIR / "traveler_outfit_preview.png"
 scene.render.filepath = str(render_path)
 bpy.ops.render.render(write_still=True)
 
-blend_path = OUTPUT_DIR / "traveler_character.blend"
+blend_path = OUTPUT_DIR / "traveler_character_outfit.blend"
 bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
 
-print("real_humanoid_done", source_blend, render_path, blend_path)
+print("traveler_outfit_done", source_blend, render_path, blend_path)
