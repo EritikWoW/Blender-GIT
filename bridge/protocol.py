@@ -10,6 +10,7 @@ ALLOWED_TOOLS = {
     "get_object_info",
     "get_viewport_screenshot",
     "render_scene_preview",
+    "run_project",
     "execute_blender_code",
     "export_glb",
 }
