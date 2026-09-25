@@ -1,0 +1,97 @@
+name: Blender command dispatcher
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  dispatch:
+    if: >
+      github.event.issue.number == 1 &&
+      github.event.comment.user.login == github.repository_owner &&
+      startsWith(github.event.comment.body, '/blender ')
+    runs-on: [self-hosted, Windows, X64, blender-local]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract command
+        id: command
+        shell: pwsh
+        env:
+          BODY: ${{ github.event.comment.body }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:BODY.StartsWith('/blender ')) {
+            throw 'Invalid command prefix'
+          }
+
+          $json = $env:BODY.Substring(9).Trim()
+          if ([string]::IsNullOrWhiteSpace($json)) {
+            throw 'Missing JSON command'
+          }
+
+          $json | Set-Content -LiteralPath command.json -Encoding utf8
+          "payload<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          $json | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Validate JSON and whitelist
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $payload = Get-Content -LiteralPath command.json -Raw | ConvertFrom-Json
+          $allowed = @(
+            'get_scene_info',
+            'get_object_info',
+            'get_viewport_screenshot',
+            'execute_blender_code',
+            'export_glb'
+          )
+
+          if ($allowed -notcontains [string]$payload.tool) {
+            throw "Tool is not allowed: $($payload.tool)"
+          }
+
+      - name: Execute local Blender bridge
+        shell: pwsh
+        env:
+          BLENDER_COMMAND: ${{ steps.command.outputs.payload }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python bridge/blender_mcp_client.py --command $env:BLENDER_COMMAND
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blender-result-${{ github.run_id }}
+          path: bridge/out
+          if-no-files-found: warn
+
+      - name: Comment result
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body;
+            try {
+              const raw = fs.readFileSync('bridge/out/result.json', 'utf8');
+              const trimmed = raw.length > 60000 ? raw.slice(0, 60000) + '\n...truncated...' : raw;
+              body = 'Blender bridge result for run `' + context.runId + '`:\n\n```json\n' + trimmed + '\n```';
+            } catch (e) {
+              body = 'Blender bridge run `' + context.runId + '` did not produce result.json. Check the Actions log.';
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
