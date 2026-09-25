@@ -152,6 +152,15 @@ if dims.z < max(dims.x, dims.y) * 0.70:
     root.location.z -= min_v.z
     bpy.context.view_layer.update()
 
+def make_mat(name, color, roughness=0.7):
+    mat = bpy.data.materials.get(name) or bpy.data.materials.new(name=name)
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    if bsdf:
+        bsdf.inputs["Base Color"].default_value = color
+        bsdf.inputs["Roughness"].default_value = roughness
+    return mat
+
 # ------------------------------------------------------------
 # Traveler outfit generated from the real rigged body
 # ------------------------------------------------------------
