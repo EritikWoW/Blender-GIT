@@ -287,75 +287,11 @@ boots = create_shell(
     thickness=0.030,
 )
 
-def add_box(name, loc, dims, material, rotation=(0.0, 0.0, 0.0), bevel=0.025):
-    bpy.ops.mesh.primitive_cube_add(location=loc, rotation=rotation)
-    obj = bpy.context.active_object
-    obj.name = name
-    obj.dimensions = dims
-    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-    obj.data.materials.append(material)
-    bev = obj.modifiers.new("SoftEdges", "BEVEL")
-    bev.width = bevel
-    bev.segments = 3
-    return obj
+# First-pass fitted outfit intentionally keeps only body-derived shells.
+# Accessories/hair will be reintroduced from rig/body measurements after the
+# shell fit is validated, avoiding world-space transform errors.
+print("traveler_outfit_created", [shirt.name, vest.name, pants.name, boots.name])
 
-# Wide wrapped sash, hanging cloth ends, and diagonal leather strap.
-sash = add_box("Traveler_Sash", (0.0, -0.01, 1.70), (0.92, 0.54, 0.22), sash_mat, bevel=0.035)
-sash.parent = root
-
-sash_end_a = add_box(
-    "Traveler_SashEnd_A",
-    (0.15, -0.30, 1.35),
-    (0.16, 0.055, 0.62),
-    sash_mat,
-    rotation=(math.radians(4), math.radians(-5), math.radians(10)),
-    bevel=0.018,
-)
-sash_end_a.parent = root
-
-sash_end_b = add_box(
-    "Traveler_SashEnd_B",
-    (-0.03, -0.29, 1.31),
-    (0.13, 0.050, 0.55),
-    sash_mat,
-    rotation=(math.radians(-3), math.radians(5), math.radians(-8)),
-    bevel=0.018,
-)
-sash_end_b.parent = root
-
-strap = add_box(
-    "Traveler_CrossBodyStrap",
-    (0.03, -0.39, 2.18),
-    (0.11, 0.055, 1.62),
-    strap_mat,
-    rotation=(0.0, math.radians(7), math.radians(-24)),
-    bevel=0.018,
-)
-strap.parent = root
-
-# A few overlapping ellipsoids form a stylized dark hair mass.
-def add_hair_blob(name, loc, scale):
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=12, location=loc)
-    o = bpy.context.active_object
-    o.name = name
-    o.scale = scale
-    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-    o.data.materials.append(hair_mat)
-    return o
-
-for i, (loc, scale) in enumerate([
-    ((0.00, 0.015, 3.39), (0.34, 0.30, 0.20)),
-    ((-0.20, -0.015, 3.33), (0.18, 0.20, 0.23)),
-    ((0.20, -0.010, 3.33), (0.18, 0.20, 0.23)),
-    ((-0.10, -0.20, 3.38), (0.16, 0.10, 0.13)),
-    ((0.10, -0.20, 3.38), (0.16, 0.10, 0.13)),
-]):
-    hb = add_hair_blob(f"Traveler_Hair_{i}", loc, scale)
-
-# Short beard/stubble mass under the jaw.
-beard = add_hair_blob("Traveler_Beard", (0.0, -0.245, 3.08), (0.23, 0.10, 0.15))
-
-print("traveler_outfit_created", [shirt.name, vest.name, pants.name, boots.name, sash.name, strap.name])
 
 # ------------------------------------------------------------
 # Ground / studio
