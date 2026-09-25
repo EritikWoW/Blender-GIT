@@ -230,7 +230,6 @@ def create_shell(name, prefixes, material, zmin=None, zmax=None, offset=0.018, t
 
     mask = obj.modifiers.new("OutfitMask", "MASK")
     mask.vertex_group = mask_group.name
-    obj.modifiers.move(len(obj.modifiers) - 1, 0)
 
     shrink = obj.modifiers.new("BodyClearance", "SHRINKWRAP")
     shrink.target = body
