@@ -298,8 +298,8 @@ def arc_garment(name,z_levels,clearance,mat,gap_func,segments=64,front_bias=0.0,
         x0,x1,y0,y1=torso_section(z)
         cx=(x0+x1)*0.5
         cy=(y0+y1)*0.5+front_bias
-        rx=(x1-x0)*0.5+clearance
-        ry=(y1-y0)*0.5+clearance
+        rx=(x1-x0)*0.5+clearance*0.15
+        ry=(y1-y0)*0.5+clearance*0.15
         gap=gap_func(z)
         start=-math.pi/2+gap
         end=3*math.pi/2-gap
@@ -320,22 +320,30 @@ def arc_garment(name,z_levels,clearance,mat,gap_func,segments=64,front_bias=0.0,
     obj=bpy.data.objects.new(name,mesh)
     bpy.context.collection.objects.link(obj)
     obj.data.materials.append(mat)
+    sub=obj.modifiers.new("GarmentSubdivision","SUBSURF")
+    sub.levels=1
+    sub.render_levels=1
+    shrink=obj.modifiers.new("GarmentFit","SHRINKWRAP")
+    shrink.target=body
+    shrink.wrap_method="NEAREST_SURFACEPOINT"
+    shrink.wrap_mode="OUTSIDE"
+    shrink.offset=clearance
     solid=obj.modifiers.new("Thickness","SOLIDIFY")
     solid.thickness=thickness
     solid.offset=1.0
     bevel=obj.modifiers.new("SoftEdges","BEVEL")
-    bevel.width=0.012
+    bevel.width=0.010
     bevel.segments=3
     for p in obj.data.polygons:
         p.use_smooth=True
     return obj
 
 # Linen shirt body: fitted to torso, narrow placket at chest widening to an open V-neck.
-shirt_gap=lambda z: 0.045 if z<2.50 else min(0.36,0.045+(z-2.50)*0.70)
+shirt_gap=lambda z: 0.025 if z<2.52 else min(0.22,0.025+(z-2.52)*0.48)
 shirt_torso=arc_garment(
     "Traveler_ShirtTorso",
     [1.34,1.52,1.74,1.98,2.22,2.44,2.62,2.78,2.92],
-    0.040,shirt_mat,shirt_gap,segments=72,front_bias=-0.006,thickness=0.018
+    0.030,shirt_mat,shirt_gap,segments=72,front_bias=-0.004,thickness=0.018
 )
 
 # Separate loose sleeves, aligned to actual arm bones.
@@ -359,13 +367,13 @@ for side in ("L","R"):
 # Dark open sleeveless vest: smooth fitted arc around back and sides, wide opening at front.
 def vest_gap(z):
     if z<2.38:
-        return 0.24
-    return min(0.62,0.24+(z-2.38)*0.85)
+        return 0.14
+    return min(0.42,0.14+(z-2.38)*0.68)
 
 vest=arc_garment(
     "Traveler_Vest",
-    [1.46,1.66,1.90,2.14,2.36,2.56,2.72,2.82],
-    0.080,vest_mat,vest_gap,segments=72,front_bias=0.002,thickness=0.024
+    [1.46,1.64,1.84,2.04,2.24,2.42,2.58,2.70,2.78],
+    0.052,vest_mat,vest_gap,segments=72,front_bias=0.000,thickness=0.022
 )
 
 # Loose trousers as actual garment tubes along the rig, not copied anatomy.
