@@ -276,101 +276,158 @@ def curve_strap(name,points,radius,mat):
     return o
 
 # ---------- outfit ----------
-# Shirt: torso and sleeves conform to the original anatomy but remain a separate cloth shell.
-shirt_torso = shell_from_body(
+def torso_section(z, window=0.045, x_limit=0.50):
+    pts=[]
+    for v in body.data.vertices:
+        p=wpos(v.co)
+        if abs(p.z-z)<=window and abs(p.x)<=x_limit:
+            pts.append(p)
+    if len(pts)<12:
+        candidates=[wpos(v.co) for v in body.data.vertices if abs(wpos(v.co).x)<=x_limit]
+        pts=sorted(candidates,key=lambda p:abs(p.z-z))[:96]
+    return (
+        min(p.x for p in pts),max(p.x for p in pts),
+        min(p.y for p in pts),max(p.y for p in pts)
+    )
+
+def arc_garment(name,z_levels,clearance,mat,gap_func,segments=64,front_bias=0.0,thickness=0.020):
+    verts=[]; faces=[]
+    ring_count=len(z_levels)
+    points_per_ring=segments+1
+    for z in z_levels:
+        x0,x1,y0,y1=torso_section(z)
+        cx=(x0+x1)*0.5
+        cy=(y0+y1)*0.5+front_bias
+        rx=(x1-x0)*0.5+clearance
+        ry=(y1-y0)*0.5+clearance
+        gap=gap_func(z)
+        start=-math.pi/2+gap
+        end=3*math.pi/2-gap
+        for i in range(points_per_ring):
+            t=i/segments
+            a=start+(end-start)*t
+            verts.append((cx+math.cos(a)*rx,cy+math.sin(a)*ry,z))
+    for r in range(ring_count-1):
+        for i in range(segments):
+            a=r*points_per_ring+i
+            b=a+1
+            c=(r+1)*points_per_ring+i+1
+            d=(r+1)*points_per_ring+i
+            faces.append((a,b,c,d))
+    mesh=bpy.data.meshes.new(name+"Mesh")
+    mesh.from_pydata(verts,[],faces)
+    mesh.update()
+    obj=bpy.data.objects.new(name,mesh)
+    bpy.context.collection.objects.link(obj)
+    obj.data.materials.append(mat)
+    solid=obj.modifiers.new("Thickness","SOLIDIFY")
+    solid.thickness=thickness
+    solid.offset=1.0
+    bevel=obj.modifiers.new("SoftEdges","BEVEL")
+    bevel.width=0.012
+    bevel.segments=3
+    for p in obj.data.polygons:
+        p.use_smooth=True
+    return obj
+
+# Linen shirt body: fitted to torso, narrow placket at chest widening to an open V-neck.
+shirt_gap=lambda z: 0.045 if z<2.50 else min(0.36,0.045+(z-2.50)*0.70)
+shirt_torso=arc_garment(
     "Traveler_ShirtTorso",
-    ("spine","shoulder"),
-    1.28,2.96,
-    shirt_mat,0.040,0.020,
-    front_v_cut=True
-)
-shirt_arms = shell_from_body(
-    "Traveler_ShirtSleeves",
-    ("upper_arm","forearm"),
-    1.18,2.82,
-    shirt_mat,0.045,0.020
+    [1.34,1.52,1.74,1.98,2.22,2.44,2.62,2.78,2.92],
+    0.040,shirt_mat,shirt_gap,segments=72,front_bias=-0.006,thickness=0.018
 )
 
-shirt_yoke = shell_from_body(
-    "Traveler_ShirtYoke",
-    ("shoulder",),
-    2.45,2.98,
-    shirt_mat,0.045,0.020
-)
-
-# Rolled sleeve cuffs.
+# Separate loose sleeves, aligned to actual arm bones.
 for side in ("L","R"):
+    upper=bone_world(f"upper_arm.{side}")
     fore=bone_world(f"forearm.{side}")
-    if fore:
-        elbow,wrist=fore
-        p=wrist.lerp(elbow,0.20)
-        axis=(elbow-wrist).normalized()
-        cone_between(f"Traveler_Cuff_{side}",p-axis*0.055,p+axis*0.055,0.145,0.145,shirt_mat)
+    if upper and fore:
+        shoulder,elbow=upper
+        elbow2,wrist=fore
+        cone_between(f"Traveler_ShirtUpper_{side}",shoulder,elbow,0.19,0.165,shirt_mat)
+        cone_between(f"Traveler_ShirtFore_{side}",elbow2,wrist,0.17,0.125,shirt_mat)
+        cuff_center=wrist.lerp(elbow2,0.18)
+        axis=(elbow2-wrist).normalized()
+        cone_between(
+            f"Traveler_Cuff_{side}",
+            cuff_center-axis*0.055,
+            cuff_center+axis*0.055,
+            0.145,0.145,shirt_mat
+        )
 
-# Vest: fitted body shell with a clean open center, not flat boards.
-vest = shell_from_body(
+# Dark open sleeveless vest: smooth fitted arc around back and sides, wide opening at front.
+def vest_gap(z):
+    if z<2.38:
+        return 0.24
+    return min(0.62,0.24+(z-2.38)*0.85)
+
+vest=arc_garment(
     "Traveler_Vest",
-    ("spine","shoulder"),
-    1.46,2.82,
-    vest_mat,0.065,0.024,
-    front_v_cut=False
+    [1.46,1.66,1.90,2.14,2.36,2.56,2.72,2.82],
+    0.080,vest_mat,vest_gap,segments=72,front_bias=0.002,thickness=0.024
 )
 
-# Cut a vertical opening through the front half of the vest.
-rounded_box("Traveler_VestCutter",(0.0,-0.32,2.14),(0.17,0.58,1.38),ground_mat,bevel=0.0)
-vest_cutter=bpy.context.active_object
-vest_cutter.hide_render=True
-bool_mod=vest.modifiers.new("OpenFront","BOOLEAN")
-bool_mod.operation="DIFFERENCE"
-bool_mod.solver="EXACT"
-bool_mod.object=vest_cutter
-
-# Add a shallow V at the collar using two angled cutters.
-for idx,(x,ang) in enumerate(((-0.08,34),(0.08,-34))):
-    rounded_box(f"Traveler_VestNeckCutter_{idx}",(x,-0.31,2.69),(0.16,0.55,0.58),ground_mat,rot=(0,math.radians(ang),0),bevel=0.0)
-    cutter=bpy.context.active_object
-    cutter.hide_render=True
-    bm=vest.modifiers.new(f"NeckCut_{idx}","BOOLEAN")
-    bm.operation="DIFFERENCE"
-    bm.solver="EXACT"
-    bm.object=cutter
-
-# Pants: 2-segment loose trousers on each leg.
+# Loose trousers as actual garment tubes along the rig, not copied anatomy.
 for side in ("L","R"):
     thigh=bone_world(f"thigh.{side}")
     shin=bone_world(f"shin.{side}")
     if thigh and shin:
         hip,knee=thigh
         knee2,ankle=shin
-        cone_between(f"Traveler_PantsUpper_{side}",hip+Vector((0,0,0.03)),knee+Vector((0,0,0.02)),0.245,0.205,pants_mat)
-        cone_between(f"Traveler_PantsLower_{side}",knee2+Vector((0,0,0.03)),ankle+Vector((0,0,0.13)),0.205,0.165,pants_mat)
+        cone_between(
+            f"Traveler_PantsUpper_{side}",
+            hip+Vector((0,0,0.025)),
+            knee+Vector((0,0,0.03)),
+            0.235,0.205,pants_mat
+        )
+        cone_between(
+            f"Traveler_PantsLower_{side}",
+            knee2+Vector((0,0,0.02)),
+            ankle+Vector((0,0,0.14)),
+            0.205,0.155,pants_mat
+        )
 
-# Waist wrap hides joins and matches the reference silhouette.
-elliptic_band("Traveler_Sash",1.57,1.78,0.075,sash_mat)
-rounded_box("Traveler_SashTail_A",(0.11,-0.34,1.38),(0.13,0.045,0.48),sash_mat,rot=(math.radians(4),0,math.radians(8)),bevel=0.016)
-rounded_box("Traveler_SashTail_B",(-0.02,-0.34,1.34),(0.11,0.042,0.42),sash_mat,rot=(math.radians(-3),0,math.radians(-7)),bevel=0.016)
+# Wide fabric sash follows the waist cross-section.
+elliptic_band("Traveler_Sash",1.56,1.77,0.070,sash_mat)
+rounded_box(
+    "Traveler_SashTail_A",(0.10,-0.335,1.39),(0.12,0.040,0.46),
+    sash_mat,rot=(math.radians(4),0,math.radians(8)),bevel=0.014
+)
+rounded_box(
+    "Traveler_SashTail_B",(-0.02,-0.335,1.35),(0.10,0.038,0.40),
+    sash_mat,rot=(math.radians(-3),0,math.radians(-7)),bevel=0.014
+)
 
-# Boots: tall leather shafts + separate shoe bodies.
+# High leather boots with distinct shafts and feet.
 for side,sign in (("L",-1),("R",1)):
     shin=bone_world(f"shin.{side}")
     x=0.17*sign
     if shin:
         knee,ankle=shin
         x=ankle.x
-        top=ankle.lerp(knee,0.45)
+        top=ankle.lerp(knee,0.48)
     else:
         ankle=Vector((x,0,0.10)); top=Vector((x,0,0.72))
-    cone_between(f"Traveler_BootShaft_{side}",ankle+Vector((0,0,0.06)),top,0.185,0.17,boots_mat)
-    rounded_box(f"Traveler_BootFoot_{side}",(x,-0.13,0.105),(0.34,0.52,0.22),boots_mat,bevel=0.055)
+    cone_between(
+        f"Traveler_BootShaft_{side}",
+        ankle+Vector((0,0,0.06)),top,
+        0.182,0.165,boots_mat
+    )
+    rounded_box(
+        f"Traveler_BootFoot_{side}",
+        (x,-0.125,0.105),(0.33,0.49,0.215),
+        boots_mat,bevel=0.050
+    )
 
-# Cross-body strap.
+# Cross-body leather strap, close to the shirt/vest surface.
 curve_strap(
     "Traveler_CrossBodyStrap",
-    [(-0.29,-0.39,2.72),(-0.13,-0.41,2.38),(0.05,-0.41,2.05),(0.23,-0.37,1.74)],
-    0.022,strap_mat
+    [(-0.28,-0.365,2.70),(-0.13,-0.385,2.38),(0.04,-0.390,2.06),(0.22,-0.350,1.75)],
+    0.020,strap_mat
 )
 
-print("traveler_outfit_v6_created")
+print("traveler_outfit_v7_created")
 
 # ---------- studio ----------
 bpy.ops.mesh.primitive_plane_add(size=14,location=(0,0,0))
