@@ -364,8 +364,8 @@ def vest_gap(z):
 
 vest=arc_garment(
     "Traveler_Vest",
-    [1.46,1.64,1.84,2.04,2.24,2.42,2.58,2.70,2.78],
-    0.035,vest_mat,vest_gap,segments=72,front_bias=0.000,thickness=0.022
+    [1.80,1.92,2.08,2.24,2.40,2.54,2.66,2.72],
+    0.032,vest_mat,vest_gap,segments=72,front_bias=0.000,thickness=0.022
 )
 
 # Loose trousers as actual garment tubes along the rig, not copied anatomy.
@@ -389,7 +389,7 @@ for side in ("L","R"):
         )
 
 # Wide fabric sash follows the waist cross-section.
-elliptic_band("Traveler_Sash",1.56,1.77,0.070,sash_mat)
+elliptic_band("Traveler_Sash",1.58,1.75,0.066,sash_mat)
 rounded_box(
     "Traveler_SashTail_A",(0.10,-0.335,1.39),(0.12,0.040,0.46),
     sash_mat,rot=(math.radians(4),0,math.radians(8)),bevel=0.014
@@ -427,7 +427,50 @@ curve_strap(
     0.020,strap_mat
 )
 
-print("traveler_outfit_v8_created")
+# Dark hair cap with the forehead and face left open.
+bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=24, location=(0.0,0.035,3.40))
+hair=bpy.context.active_object
+hair.name="Traveler_Hair"
+hair.scale=(0.31,0.285,0.22)
+bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
+
+bm=bmesh.new()
+bm.from_mesh(hair.data)
+bm.verts.ensure_lookup_table()
+delete=[]
+for v in bm.verts:
+    p=hair.matrix_world @ v.co
+    # remove lower half and open the front/forehead
+    if p.z < 3.30 or (p.y < -0.10 and p.z < 3.49):
+        delete.append(v)
+bmesh.ops.delete(bm,geom=delete,context="VERTS")
+bm.to_mesh(hair.data)
+bm.free()
+hair.data.update()
+hair.data.materials.append(hair_mat)
+solid=hair.modifiers.new("HairThickness","SOLIDIFY")
+solid.thickness=0.025
+solid.offset=1.0
+for poly in hair.data.polygons:
+    poly.use_smooth=True
+
+# Side/back locks give a slightly wavy silhouette without blocking the face.
+for x,y,z,sc in [
+    (-0.23,0.03,3.33,(0.075,0.10,0.17)),
+    (0.23,0.03,3.33,(0.075,0.10,0.17)),
+    (-0.17,0.12,3.31,(0.09,0.075,0.15)),
+    (0.17,0.12,3.31,(0.09,0.075,0.15)),
+]:
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=24,ring_count=12,location=(x,y,z))
+    lock=bpy.context.active_object
+    lock.name="Traveler_HairLock"
+    lock.scale=sc
+    bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
+    lock.data.materials.append(hair_mat)
+    for poly in lock.data.polygons:
+        poly.use_smooth=True
+
+print("traveler_outfit_v9_created")
 
 # ---------- studio ----------
 bpy.ops.mesh.primitive_plane_add(size=14,location=(0,0,0))
