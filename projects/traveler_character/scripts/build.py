@@ -232,6 +232,17 @@ def cone_between(name, p1, p2, r1, r2, mat):
     o.name=name
     o.rotation_euler=vec.to_track_quat("Z","Y").to_euler()
     o.data.materials.append(mat)
+    if "Shirt" in name or "Pants" in name:
+        sub=o.modifiers.new("ClothSubdivision","SUBSURF")
+        sub.levels=1
+        sub.render_levels=1
+        tex_name=name+"_Wrinkle"
+        tex=bpy.data.textures.get(tex_name) or bpy.data.textures.new(tex_name,type="CLOUDS")
+        tex.noise_scale=0.14 if "Shirt" in name else 0.20
+        disp=o.modifiers.new("ClothWrinkle","DISPLACE")
+        disp.texture=tex
+        disp.strength=0.014 if "Shirt" in name else 0.018
+        disp.mid_level=0.5
     bev=o.modifiers.new("SoftEdges","BEVEL")
     bev.width=0.016
     bev.segments=3
@@ -353,6 +364,14 @@ def arc_garment(name,z_levels,clearance,mat,gap_func,segments=64,front_bias=0.0,
     sub=obj.modifiers.new("GarmentSubdivision","SUBSURF")
     sub.levels=1
     sub.render_levels=1
+    if "Shirt" in name or "Vest" in name:
+        tex_name=name+"_GeoWrinkle"
+        tex=bpy.data.textures.get(tex_name) or bpy.data.textures.new(tex_name,type="CLOUDS")
+        tex.noise_scale=0.16 if "Shirt" in name else 0.22
+        disp=obj.modifiers.new("FabricShape","DISPLACE")
+        disp.texture=tex
+        disp.strength=0.012 if "Shirt" in name else 0.007
+        disp.mid_level=0.5
     solid=obj.modifiers.new("Thickness","SOLIDIFY")
     solid.thickness=thickness
     solid.offset=1.0
@@ -509,7 +528,18 @@ for x,y,z,sc in [
     for poly in lock.data.polygons:
         poly.use_smooth=True
 
-print("traveler_outfit_v11_created")
+# Curved dark locks break up the cap silhouette.
+for i,pts in enumerate([
+    [(-0.18,-0.03,3.49),(-0.21,0.00,3.42),(-0.23,0.04,3.33)],
+    [(-0.09,-0.05,3.51),(-0.13,0.00,3.43),(-0.16,0.07,3.32)],
+    [(0.09,-0.05,3.51),(0.13,0.00,3.43),(0.16,0.07,3.32)],
+    [(0.18,-0.03,3.49),(0.21,0.00,3.42),(0.23,0.04,3.33)],
+    [(-0.13,0.05,3.52),(-0.15,0.12,3.42),(-0.12,0.16,3.31)],
+    [(0.13,0.05,3.52),(0.15,0.12,3.42),(0.12,0.16,3.31)],
+]):
+    curve_strap(f"Traveler_HairStrand_{i}",pts,0.014,hair_mat)
+
+print("traveler_outfit_v12_created")
 
 # ---------- studio ----------
 bpy.ops.mesh.primitive_plane_add(size=14,location=(0,0,0))
@@ -550,4 +580,4 @@ for window in bpy.context.window_manager.windows:
 
 blend_path=OUTPUT_DIR/"traveler_character_outfit.blend"
 bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
-print("traveler_outfit_v11_done",blend_path)
+print("traveler_outfit_v12_done",blend_path)
