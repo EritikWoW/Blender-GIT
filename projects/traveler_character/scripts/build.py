@@ -434,9 +434,9 @@ for side in ("L","R"):
         vec=(wrist-shoulder).normalized()
         cone_between(
             f"Traveler_ShirtSleeve_{side}",
-            shoulder-vec*0.10,
-            wrist+vec*0.025,
-            0.290,0.150,shirt_mat
+            shoulder-vec*0.055,
+            wrist+vec*0.020,
+            0.225,0.135,shirt_mat
         )
         cuff_center=wrist.lerp(elbow,0.14)
         axis=(elbow-wrist).normalized()
@@ -444,33 +444,20 @@ for side in ("L","R"):
             f"Traveler_Cuff_{side}",
             cuff_center-axis*0.052,
             cuff_center+axis*0.052,
-            0.158,0.158,shirt_mat
+            0.145,0.145,shirt_mat
         )
-
-# Shoulder yoke closes the gaps between torso and sleeves.
-shirt_shoulders=shell_from_body(
-    "Traveler_ShirtShoulders",
-    ("shoulder",),
-    2.66,3.00,
-    shirt_mat,0.040,0.018,
-    front_gap_func=None
-)
 
 # Dark sleeveless vest: clearly open at the front with shirt visible between the panels.
 def vest_gap(z):
-    if z<2.28:
-        return 0.48
-    return min(0.78,0.48+(z-2.28)*0.60)
+    if z<2.20:
+        return 0.38
+    return min(0.62,0.38+(z-2.20)*0.46)
 
 vest=torso_arc(
     "Traveler_Vest",
-    [1.48,1.62,1.80,2.00,2.20,2.38,2.54,2.68,2.78],
-    0.055,vest_mat,vest_gap,segments=72,thickness=0.022
+    [1.50,1.64,1.82,2.02,2.22,2.40,2.56,2.68,2.75],
+    0.040,vest_mat,vest_gap,segments=72,thickness=0.020
 )
-
-# Long side tails of the vest.
-rounded_box("Traveler_VestTail_L",(-0.34,0.05,1.45),(0.22,0.18,0.58),vest_mat,rot=(math.radians(2),0,math.radians(-3)),bevel=0.035)
-rounded_box("Traveler_VestTail_R",(0.34,0.05,1.45),(0.22,0.18,0.58),vest_mat,rot=(math.radians(2),0,math.radians(3)),bevel=0.035)
 
 # Pants: one continuous baggy tapered tube per leg, tucked into the boots.
 for side in ("L","R"):
@@ -484,7 +471,7 @@ for side in ("L","R"):
             f"Traveler_Pants_{side}",
             hip-leg_vec*0.03,
             ankle+leg_vec*0.11,
-            0.375,0.220,pants_mat
+            0.300,0.180,pants_mat
         )
 
 # Dark waist bridge joins both trouser legs under the sash.
@@ -526,28 +513,27 @@ def wrapped_band(name,z0,z1,clearance,phase):
         p.use_smooth=True
     return obj
 
-wrapped_band("Traveler_Sash_1",1.56,1.63,0.040,0.2)
-wrapped_band("Traveler_Sash_2",1.62,1.69,0.050,1.4)
-wrapped_band("Traveler_Sash_3",1.68,1.75,0.045,2.5)
+wrapped_band("Traveler_Sash_1",1.58,1.65,0.032,0.2)
+wrapped_band("Traveler_Sash_2",1.64,1.72,0.040,1.4)
 
 rounded_box(
-    "Traveler_SashTail_A",(0.10,-0.34,1.38),(0.12,0.038,0.48),
+    "Traveler_SashTail_A",(0.09,-0.31,1.42),(0.10,0.032,0.40),
     sash_mat,rot=(math.radians(5),math.radians(-2),math.radians(9)),bevel=0.018
 )
 rounded_box(
-    "Traveler_SashTail_B",(-0.03,-0.34,1.33),(0.10,0.036,0.42),
+    "Traveler_SashTail_B",(-0.02,-0.31,1.39),(0.085,0.030,0.34),
     sash_mat,rot=(math.radians(-4),math.radians(2),math.radians(-8)),bevel=0.018
 )
 
 # Boots: tall shafts plus a rounded wedge-shaped foot.
 def boot_wedge(name,x,mat):
     y_back=0.10
-    y_front=-0.42
+    y_front=-0.38
     z0=0.02
-    z_back=0.22
-    z_front=0.14
-    hw_back=0.18
-    hw_front=0.15
+    z_back=0.20
+    z_front=0.12
+    hw_back=0.16
+    hw_front=0.135
     verts=[
         (x-hw_back,y_back,z0),(x+hw_back,y_back,z0),
         (x+hw_front,y_front,z0),(x-hw_front,y_front,z0),
@@ -588,7 +574,7 @@ for side,sign in (("L",-1),("R",1)):
     cone_between(
         f"Traveler_BootShaft_{side}",
         ankle+Vector((0,0,0.055)),top,
-        0.190,0.170,boots_mat
+        0.165,0.150,boots_mat
     )
     boot_wedge(f"Traveler_BootFoot_{side}",x,boots_mat)
 
@@ -629,14 +615,14 @@ def flat_strap(name,points,width,mat):
 flat_strap(
     "Traveler_CrossBodyStrap",
     [(-0.30,-0.30,2.73),(-0.14,-0.32,2.40),(0.04,-0.32,2.06),(0.24,-0.29,1.73)],
-    0.080,strap_mat
+    0.060,strap_mat
 )
 
 # Compact dark hair cap with curved strands, no side-sphere "ears".
 bpy.ops.mesh.primitive_uv_sphere_add(segments=48,ring_count=24,location=(0.0,0.045,3.40))
 hair=bpy.context.active_object
 hair.name="Traveler_Hair"
-hair.scale=(0.272,0.238,0.130)
+hair.scale=(0.255,0.225,0.118)
 bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
 
 bm=bmesh.new()
@@ -668,7 +654,7 @@ for i,pts in enumerate([
 ]):
     curve_strap(f"Traveler_HairStrand_{i}",pts,0.012,hair_mat)
 
-print("traveler_outfit_v17_created")
+print("traveler_outfit_v18_created")
 
 # ---------- studio ----------
 bpy.ops.mesh.primitive_plane_add(size=14,location=(0,0,0))
@@ -709,4 +695,4 @@ for window in bpy.context.window_manager.windows:
 
 blend_path=OUTPUT_DIR/"traveler_character_outfit.blend"
 bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
-print("traveler_outfit_v13_done",blend_path)
+print("traveler_outfit_v18_done",blend_path)
