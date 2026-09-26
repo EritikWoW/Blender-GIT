@@ -386,7 +386,7 @@ def arc_garment(name,z_levels,clearance,mat,gap_func,segments=64,front_bias=0.0,
 shirt_gap=lambda z: 0.018 if z<2.54 else min(0.16,0.018+(z-2.54)*0.38)
 shirt_torso=arc_garment(
     "Traveler_ShirtTorso",
-    [1.34,1.52,1.74,1.98,2.22,2.44,2.60,2.74,2.86],
+    [1.34,1.52,1.74,1.98,2.22,2.44,2.62,2.78,2.90],
     0.022,shirt_mat,shirt_gap,segments=72,front_bias=-0.003,thickness=0.018
 )
 
@@ -397,8 +397,20 @@ for side in ("L","R"):
     if upper and fore:
         shoulder,elbow=upper
         elbow2,wrist=fore
-        cone_between(f"Traveler_ShirtUpper_{side}",shoulder,elbow,0.19,0.165,shirt_mat)
-        cone_between(f"Traveler_ShirtFore_{side}",elbow2,wrist,0.17,0.125,shirt_mat)
+        arm_dir=(elbow-shoulder).normalized()
+        fore_dir=(wrist-elbow).normalized()
+        cone_between(
+            f"Traveler_ShirtUpper_{side}",
+            shoulder-arm_dir*0.075,
+            elbow+arm_dir*0.055,
+            0.255,0.205,shirt_mat
+        )
+        cone_between(
+            f"Traveler_ShirtFore_{side}",
+            elbow-fore_dir*0.055,
+            wrist+fore_dir*0.020,
+            0.205,0.145,shirt_mat
+        )
         cuff_center=wrist.lerp(elbow2,0.18)
         axis=(elbow2-wrist).normalized()
         cone_between(
@@ -410,14 +422,14 @@ for side in ("L","R"):
 
 # Dark open sleeveless vest: smooth fitted arc around back and sides, wide opening at front.
 def vest_gap(z):
-    if z<2.38:
-        return 0.16
-    return min(0.34,0.16+(z-2.38)*0.46)
+    if z < 2.30:
+        return 0.48
+    return min(0.76, 0.48 + (z-2.30)*0.62)
 
 vest=arc_garment(
     "Traveler_Vest",
-    [1.86,1.98,2.12,2.26,2.40,2.52,2.62,2.68],
-    0.032,vest_mat,vest_gap,segments=72,front_bias=0.000,thickness=0.022
+    [1.46,1.60,1.78,1.98,2.18,2.36,2.52,2.66,2.76],
+    0.040,vest_mat,vest_gap,segments=72,front_bias=0.000,thickness=0.022
 )
 
 # Loose trousers as actual garment tubes along the rig, not copied anatomy.
@@ -431,13 +443,13 @@ for side in ("L","R"):
             f"Traveler_PantsUpper_{side}",
             hip+Vector((0,0,0.025)),
             knee+Vector((0,0,0.03)),
-            0.235,0.205,pants_mat
+            0.315,0.265,pants_mat
         )
         cone_between(
             f"Traveler_PantsLower_{side}",
             knee2+Vector((0,0,0.02)),
             ankle+Vector((0,0,0.14)),
-            0.205,0.155,pants_mat
+            0.270,0.205,pants_mat
         )
 
 # Wide fabric sash follows the waist cross-section.
@@ -458,7 +470,7 @@ for side,sign in (("L",-1),("R",1)):
     if shin:
         knee,ankle=shin
         x=ankle.x
-        top=ankle.lerp(knee,0.48)
+        top=ankle.lerp(knee,0.72)
     else:
         ankle=Vector((x,0,0.10)); top=Vector((x,0,0.72))
     cone_between(
@@ -466,11 +478,14 @@ for side,sign in (("L",-1),("R",1)):
         ankle+Vector((0,0,0.06)),top,
         0.182,0.165,boots_mat
     )
-    rounded_box(
+    boot_foot=rounded_box(
         f"Traveler_BootFoot_{side}",
-        (x,-0.125,0.105),(0.33,0.49,0.215),
-        boots_mat,bevel=0.050
+        (x,-0.145,0.105),(0.34,0.56,0.215),
+        boots_mat,bevel=0.060
     )
+    sub=boot_foot.modifiers.new("BootSmooth","SUBSURF")
+    sub.levels=1
+    sub.render_levels=1
 
 # Cross-body leather strap, close to the shirt/vest surface.
 curve_strap(
@@ -539,7 +554,7 @@ for i,pts in enumerate([
 ]):
     curve_strap(f"Traveler_HairStrand_{i}",pts,0.014,hair_mat)
 
-print("traveler_outfit_v12_created")
+print("traveler_outfit_v13_created")
 
 # ---------- studio ----------
 bpy.ops.mesh.primitive_plane_add(size=14,location=(0,0,0))
@@ -580,4 +595,4 @@ for window in bpy.context.window_manager.windows:
 
 blend_path=OUTPUT_DIR/"traveler_character_outfit.blend"
 bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
-print("traveler_outfit_v12_done",blend_path)
+print("traveler_outfit_v13_done",blend_path)
