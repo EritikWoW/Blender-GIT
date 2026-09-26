@@ -113,6 +113,7 @@ pants_mat = make_mat("Traveler_Pants", (0.035,0.028,0.024,1),0.95)
 boots_mat = make_mat("Traveler_Boots", (0.16,0.055,0.018,1),0.80)
 sash_mat  = make_mat("Traveler_Sash",  (0.21,0.070,0.025,1),0.88)
 strap_mat = make_mat("Traveler_Strap", (0.075,0.022,0.008,1),0.74)
+hair_mat  = make_mat("Traveler_Hair",  (0.018,0.007,0.003,1),0.82)
 ground_mat= make_mat("Ground",         (0.018,0.022,0.020,1),0.98)
 
 body.data.materials.clear()
@@ -511,4 +512,4 @@ for window in bpy.context.window_manager.windows:
 
 blend_path=OUTPUT_DIR/"traveler_character_outfit.blend"
 bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
-print("traveler_outfit_v6_done",blend_path)
+print("traveler_outfit_v9_done",blend_path)
