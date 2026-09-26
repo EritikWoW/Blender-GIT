@@ -116,6 +116,35 @@ strap_mat = make_mat("Traveler_Strap", (0.075,0.022,0.008,1),0.74)
 hair_mat  = make_mat("Traveler_Hair",  (0.018,0.007,0.003,1),0.82)
 ground_mat= make_mat("Ground",         (0.018,0.022,0.020,1),0.98)
 
+def add_surface_bump(mat, scale=8.0, strength=0.18, distance=0.035):
+    nt=mat.node_tree
+    bsdf=principled_node(mat)
+    if not nt or not bsdf or "Normal" not in bsdf.inputs:
+        return
+    for node in list(nt.nodes):
+        if node.name.startswith("TravelerDetail_"):
+            nt.nodes.remove(node)
+    tex=nt.nodes.new("ShaderNodeTexCoord")
+    tex.name="TravelerDetail_TexCoord"
+    noise=nt.nodes.new("ShaderNodeTexNoise")
+    noise.name="TravelerDetail_Noise"
+    noise.inputs["Scale"].default_value=scale
+    if "Detail" in noise.inputs:
+        noise.inputs["Detail"].default_value=3.0
+    bump=nt.nodes.new("ShaderNodeBump")
+    bump.name="TravelerDetail_Bump"
+    bump.inputs["Strength"].default_value=strength
+    bump.inputs["Distance"].default_value=distance
+    nt.links.new(tex.outputs["Generated"],noise.inputs["Vector"])
+    nt.links.new(noise.outputs["Fac"],bump.inputs["Height"])
+    nt.links.new(bump.outputs["Normal"],bsdf.inputs["Normal"])
+
+add_surface_bump(shirt_mat,11.0,0.22,0.025)
+add_surface_bump(vest_mat,7.0,0.16,0.022)
+add_surface_bump(pants_mat,9.0,0.12,0.020)
+add_surface_bump(boots_mat,5.0,0.10,0.018)
+add_surface_bump(sash_mat,8.0,0.15,0.020)
+
 body.data.materials.clear()
 body.data.materials.append(skin_mat)
 
@@ -339,6 +368,9 @@ shirt_torso=arc_garment(
     0.022,shirt_mat,shirt_gap,segments=72,front_bias=-0.003,thickness=0.018
 )
 
+# Close the lower shirt front; only the upper chest remains open.
+panel_grid("Traveler_ShirtFront",-0.20,0.20,1.38,2.46,-0.375,shirt_mat,front=True,nx=10,nz=20)
+
 # Separate loose sleeves, aligned to actual arm bones.
 for side in ("L","R"):
     upper=bone_world(f"upper_arm.{side}")
@@ -360,12 +392,12 @@ for side in ("L","R"):
 # Dark open sleeveless vest: smooth fitted arc around back and sides, wide opening at front.
 def vest_gap(z):
     if z<2.38:
-        return 0.10
-    return min(0.30,0.10+(z-2.38)*0.50)
+        return 0.16
+    return min(0.34,0.16+(z-2.38)*0.46)
 
 vest=arc_garment(
     "Traveler_Vest",
-    [1.80,1.92,2.08,2.24,2.40,2.54,2.66,2.72],
+    [1.86,1.98,2.12,2.26,2.40,2.54,2.66,2.72],
     0.032,vest_mat,vest_gap,segments=72,front_bias=0.000,thickness=0.022
 )
 
@@ -432,7 +464,7 @@ curve_strap(
 bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=24, location=(0.0,0.035,3.40))
 hair=bpy.context.active_object
 hair.name="Traveler_Hair"
-hair.scale=(0.31,0.285,0.22)
+hair.scale=(0.295,0.265,0.165)
 bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
 
 bm=bmesh.new()
@@ -442,7 +474,7 @@ delete=[]
 for v in bm.verts:
     p=hair.matrix_world @ v.co
     # remove lower half and open the front/forehead
-    if p.z < 3.30 or (p.y < -0.10 and p.z < 3.49):
+    if p.z < 3.31 or (p.y < -0.09 and p.z < 3.48):
         delete.append(v)
 bmesh.ops.delete(bm,geom=delete,context="VERTS")
 bm.to_mesh(hair.data)
@@ -457,10 +489,10 @@ for poly in hair.data.polygons:
 
 # Side/back locks give a slightly wavy silhouette without blocking the face.
 for x,y,z,sc in [
-    (-0.23,0.03,3.33,(0.075,0.10,0.17)),
-    (0.23,0.03,3.33,(0.075,0.10,0.17)),
-    (-0.17,0.12,3.31,(0.09,0.075,0.15)),
-    (0.17,0.12,3.31,(0.09,0.075,0.15)),
+    (-0.22,0.04,3.32,(0.060,0.080,0.140)),
+    (0.22,0.04,3.32,(0.060,0.080,0.140)),
+    (-0.16,0.12,3.30,(0.070,0.060,0.125)),
+    (0.16,0.12,3.30,(0.070,0.060,0.125)),
 ]:
     bpy.ops.mesh.primitive_uv_sphere_add(segments=24,ring_count=12,location=(x,y,z))
     lock=bpy.context.active_object
@@ -471,7 +503,7 @@ for x,y,z,sc in [
     for poly in lock.data.polygons:
         poly.use_smooth=True
 
-print("traveler_outfit_v9_created")
+print("traveler_outfit_v10_created")
 
 # ---------- studio ----------
 bpy.ops.mesh.primitive_plane_add(size=14,location=(0,0,0))
@@ -512,4 +544,4 @@ for window in bpy.context.window_manager.windows:
 
 blend_path=OUTPUT_DIR/"traveler_character_outfit.blend"
 bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
-print("traveler_outfit_v9_done",blend_path)
+print("traveler_outfit_v10_done",blend_path)
