@@ -161,7 +161,7 @@ def has_group(v, prefixes, min_weight=0.08):
 def wpos(co):
     return body.matrix_world @ co
 
-def shell_from_body(name, prefixes, zmin, zmax, mat, clearance, thickness, front_v_cut=False):
+def shell_from_body(name, prefixes, zmin, zmax, mat, clearance, thickness, front_gap_func=None, front_y=-0.12):
     obj = body.copy()
     obj.data = body.data.copy()
     obj.name = name
@@ -175,9 +175,8 @@ def shell_from_body(name, prefixes, zmin, zmax, mat, clearance, thickness, front
         src = body.data.vertices[bv.index]
         p = wpos(src.co)
         keep = zmin <= p.z <= zmax and has_group(src, prefixes)
-        if keep and front_v_cut and p.y < -0.13 and p.z > 2.48:
-            # V neck only, narrow at bottom and wider toward collar
-            gap = 0.025 + (p.z - 2.48) * 0.26
+        if keep and front_gap_func is not None and p.y < front_y:
+            gap = max(0.0, float(front_gap_func(p.z)))
             if abs(p.x) < gap:
                 keep = False
         if not keep:
@@ -197,9 +196,17 @@ def shell_from_body(name, prefixes, zmin, zmax, mat, clearance, thickness, front
     shrink.wrap_mode = "OUTSIDE"
     shrink.offset = clearance
 
+    smooth = obj.modifiers.new("GarmentSmooth","LAPLACIANSMOOTH")
+    smooth.lambda_factor = 0.10
+    smooth.iterations = 2
+
     solid = obj.modifiers.new("Thickness","SOLIDIFY")
     solid.thickness = thickness
     solid.offset = 1.0
+
+    bevel = obj.modifiers.new("GarmentEdgeSoftness","BEVEL")
+    bevel.width = 0.008
+    bevel.segments = 2
 
     for poly in obj.data.polygons:
         poly.use_smooth = True
@@ -317,188 +324,228 @@ def curve_strap(name,points,radius,mat):
     return o
 
 # ---------- outfit ----------
-def torso_section(z, window=0.045, x_limit=0.50):
-    pts=[]
-    for v in body.data.vertices:
-        p=wpos(v.co)
-        if abs(p.z-z)<=window and abs(p.x)<=x_limit:
-            pts.append(p)
-    if len(pts)<12:
-        candidates=[wpos(v.co) for v in body.data.vertices if abs(wpos(v.co).x)<=x_limit]
-        pts=sorted(candidates,key=lambda p:abs(p.z-z))[:96]
-    return (
-        min(p.x for p in pts),max(p.x for p in pts),
-        min(p.y for p in pts),max(p.y for p in pts)
-    )
+# Shirt body: real body-derived shell, with only the neckline opened.
+def shirt_neck_gap(z):
+    if z < 2.58:
+        return 0.0
+    return min(0.145, (z - 2.58) * 0.36)
 
-def arc_garment(name,z_levels,clearance,mat,gap_func,segments=64,front_bias=0.0,thickness=0.020):
+shirt = shell_from_body(
+    "Traveler_Shirt",
+    ("spine","shoulder"),
+    1.34,2.98,
+    shirt_mat,0.035,0.018,
+    front_gap_func=shirt_neck_gap,
+    front_y=-0.11
+)
+
+# Sleeves: one continuous loose tube per arm, so no bare elbow/upper-arm gaps.
+for side in ("L","R"):
+    upper=bone_world(f"upper_arm.{side}")
+    fore=bone_world(f"forearm.{side}")
+    if upper and fore:
+        shoulder,elbow=upper
+        _,wrist=fore
+        arm_vec=(wrist-shoulder).normalized()
+        sleeve=cone_between(
+            f"Traveler_ShirtSleeve_{side}",
+            shoulder-arm_vec*0.06,
+            wrist+arm_vec*0.025,
+            0.255,0.145,shirt_mat
+        )
+        # rolled cuff near wrist
+        cuff_center=wrist.lerp(elbow,0.14)
+        axis=(elbow-wrist).normalized()
+        cone_between(
+            f"Traveler_Cuff_{side}",
+            cuff_center-axis*0.050,
+            cuff_center+axis*0.050,
+            0.155,0.155,shirt_mat
+        )
+
+# Vest: fitted shell from the real torso, split open down the front.
+def vest_front_gap(z):
+    if z < 2.28:
+        return 0.13
+    return min(0.27,0.13+(z-2.28)*0.28)
+
+vest = shell_from_body(
+    "Traveler_Vest",
+    ("spine","shoulder"),
+    1.46,2.83,
+    vest_mat,0.065,0.022,
+    front_gap_func=vest_front_gap,
+    front_y=-0.10
+)
+
+# Add slightly longer dark side tails, matching the reference silhouette.
+rounded_box("Traveler_VestTail_L",(-0.33,0.04,1.46),(0.24,0.22,0.62),vest_mat,rot=(math.radians(2),0,math.radians(-3)),bevel=0.035)
+rounded_box("Traveler_VestTail_R",(0.33,0.04,1.46),(0.24,0.22,0.62),vest_mat,rot=(math.radians(2),0,math.radians(3)),bevel=0.035)
+
+# Pants: one continuous baggy tapered tube per leg, tucked into the boots.
+for side in ("L","R"):
+    thigh=bone_world(f"thigh.{side}")
+    shin=bone_world(f"shin.{side}")
+    if thigh and shin:
+        hip,_=thigh
+        _,ankle=shin
+        leg_vec=(ankle-hip).normalized()
+        cone_between(
+            f"Traveler_Pants_{side}",
+            hip-leg_vec*0.03,
+            ankle+leg_vec*0.11,
+            0.325,0.205,pants_mat
+        )
+
+# Wrapped cloth sash: three irregular overlapping bands, no rigid plank.
+def wrapped_band(name,z0,z1,clearance,phase):
+    levels=[z0,(z0+z1)*0.5,z1]
+    segments=64
     verts=[]; faces=[]
-    ring_count=len(z_levels)
-    points_per_ring=segments+1
-    for z in z_levels:
-        x0,x1,y0,y1=torso_section(z)
+    for r,z in enumerate(levels):
+        x0,x1,y0,y1=section_bounds(z)
         cx=(x0+x1)*0.5
-        cy=(y0+y1)*0.5+front_bias
+        cy=(y0+y1)*0.5
         rx=(x1-x0)*0.5+clearance
         ry=(y1-y0)*0.5+clearance
-        gap=gap_func(z)
-        start=-math.pi/2+gap
-        end=3*math.pi/2-gap
-        for i in range(points_per_ring):
-            t=i/segments
-            a=start+(end-start)*t
-            verts.append((cx+math.cos(a)*rx,cy+math.sin(a)*ry,z))
-    for r in range(ring_count-1):
         for i in range(segments):
-            a=r*points_per_ring+i
-            b=a+1
-            c=(r+1)*points_per_ring+i+1
-            d=(r+1)*points_per_ring+i
+            a=2*math.pi*i/segments
+            zz=z+0.018*math.sin(2.0*a+phase)+0.008*math.sin(5.0*a+phase*0.5)
+            verts.append((cx+math.cos(a)*rx,cy+math.sin(a)*ry,zz))
+    for r in range(2):
+        for i in range(segments):
+            a=r*segments+i
+            b=r*segments+(i+1)%segments
+            c=(r+1)*segments+(i+1)%segments
+            d=(r+1)*segments+i
             faces.append((a,b,c,d))
     mesh=bpy.data.meshes.new(name+"Mesh")
     mesh.from_pydata(verts,[],faces)
     mesh.update()
     obj=bpy.data.objects.new(name,mesh)
     bpy.context.collection.objects.link(obj)
-    obj.data.materials.append(mat)
-    sub=obj.modifiers.new("GarmentSubdivision","SUBSURF")
-    sub.levels=1
-    sub.render_levels=1
-    if "Shirt" in name or "Vest" in name:
-        tex_name=name+"_GeoWrinkle"
-        tex=bpy.data.textures.get(tex_name) or bpy.data.textures.new(tex_name,type="CLOUDS")
-        tex.noise_scale=0.16 if "Shirt" in name else 0.22
-        disp=obj.modifiers.new("FabricShape","DISPLACE")
-        disp.texture=tex
-        disp.strength=0.012 if "Shirt" in name else 0.007
-        disp.mid_level=0.5
-    solid=obj.modifiers.new("Thickness","SOLIDIFY")
-    solid.thickness=thickness
+    obj.data.materials.append(sash_mat)
+    solid=obj.modifiers.new("SashThickness","SOLIDIFY")
+    solid.thickness=0.020
     solid.offset=1.0
-    bevel=obj.modifiers.new("SoftEdges","BEVEL")
-    bevel.width=0.010
-    bevel.segments=3
+    bev=obj.modifiers.new("SashSoftness","BEVEL")
+    bev.width=0.012
+    bev.segments=3
     for p in obj.data.polygons:
         p.use_smooth=True
     return obj
 
-# Linen shirt body: fitted to torso, narrow placket at chest widening to an open V-neck.
-shirt_gap=lambda z: 0.018 if z<2.54 else min(0.16,0.018+(z-2.54)*0.38)
-shirt_torso=arc_garment(
-    "Traveler_ShirtTorso",
-    [1.34,1.52,1.74,1.98,2.22,2.44,2.62,2.78,2.90],
-    0.022,shirt_mat,shirt_gap,segments=72,front_bias=-0.003,thickness=0.018
-)
+wrapped_band("Traveler_Sash_1",1.55,1.63,0.090,0.2)
+wrapped_band("Traveler_Sash_2",1.61,1.69,0.105,1.4)
+wrapped_band("Traveler_Sash_3",1.67,1.76,0.095,2.5)
 
-# Separate loose sleeves, aligned to actual arm bones.
-for side in ("L","R"):
-    upper=bone_world(f"upper_arm.{side}")
-    fore=bone_world(f"forearm.{side}")
-    if upper and fore:
-        shoulder,elbow=upper
-        elbow2,wrist=fore
-        arm_dir=(elbow-shoulder).normalized()
-        fore_dir=(wrist-elbow).normalized()
-        cone_between(
-            f"Traveler_ShirtUpper_{side}",
-            shoulder-arm_dir*0.075,
-            elbow+arm_dir*0.055,
-            0.255,0.205,shirt_mat
-        )
-        cone_between(
-            f"Traveler_ShirtFore_{side}",
-            elbow-fore_dir*0.055,
-            wrist+fore_dir*0.020,
-            0.205,0.145,shirt_mat
-        )
-        cuff_center=wrist.lerp(elbow2,0.18)
-        axis=(elbow2-wrist).normalized()
-        cone_between(
-            f"Traveler_Cuff_{side}",
-            cuff_center-axis*0.055,
-            cuff_center+axis*0.055,
-            0.145,0.145,shirt_mat
-        )
-
-# Dark open sleeveless vest: smooth fitted arc around back and sides, wide opening at front.
-def vest_gap(z):
-    if z < 2.30:
-        return 0.48
-    return min(0.76, 0.48 + (z-2.30)*0.62)
-
-vest=arc_garment(
-    "Traveler_Vest",
-    [1.46,1.60,1.78,1.98,2.18,2.36,2.52,2.66,2.76],
-    0.040,vest_mat,vest_gap,segments=72,front_bias=0.000,thickness=0.022
-)
-
-# Loose trousers as actual garment tubes along the rig, not copied anatomy.
-for side in ("L","R"):
-    thigh=bone_world(f"thigh.{side}")
-    shin=bone_world(f"shin.{side}")
-    if thigh and shin:
-        hip,knee=thigh
-        knee2,ankle=shin
-        cone_between(
-            f"Traveler_PantsUpper_{side}",
-            hip+Vector((0,0,0.025)),
-            knee+Vector((0,0,0.03)),
-            0.315,0.265,pants_mat
-        )
-        cone_between(
-            f"Traveler_PantsLower_{side}",
-            knee2+Vector((0,0,0.02)),
-            ankle+Vector((0,0,0.14)),
-            0.270,0.205,pants_mat
-        )
-
-# Wide fabric sash follows the waist cross-section.
-elliptic_band("Traveler_Sash",1.58,1.75,0.066,sash_mat)
 rounded_box(
-    "Traveler_SashTail_A",(0.10,-0.335,1.39),(0.12,0.040,0.46),
-    sash_mat,rot=(math.radians(4),0,math.radians(8)),bevel=0.014
+    "Traveler_SashTail_A",(0.10,-0.34,1.38),(0.12,0.038,0.48),
+    sash_mat,rot=(math.radians(5),math.radians(-2),math.radians(9)),bevel=0.018
 )
 rounded_box(
-    "Traveler_SashTail_B",(-0.02,-0.335,1.35),(0.10,0.038,0.40),
-    sash_mat,rot=(math.radians(-3),0,math.radians(-7)),bevel=0.014
+    "Traveler_SashTail_B",(-0.03,-0.34,1.33),(0.10,0.036,0.42),
+    sash_mat,rot=(math.radians(-4),math.radians(2),math.radians(-8)),bevel=0.018
 )
 
-# High leather boots with distinct shafts and feet.
+# Boots: tall shafts plus a rounded wedge-shaped foot.
+def boot_wedge(name,x,mat):
+    y_back=0.10
+    y_front=-0.42
+    z0=0.02
+    z_back=0.22
+    z_front=0.14
+    hw_back=0.18
+    hw_front=0.15
+    verts=[
+        (x-hw_back,y_back,z0),(x+hw_back,y_back,z0),
+        (x+hw_front,y_front,z0),(x-hw_front,y_front,z0),
+        (x-hw_back,y_back,z_back),(x+hw_back,y_back,z_back),
+        (x+hw_front,y_front,z_front),(x-hw_front,y_front,z_front),
+    ]
+    faces=[
+        (0,1,2,3),(4,7,6,5),
+        (0,4,5,1),(1,5,6,2),
+        (2,6,7,3),(3,7,4,0),
+    ]
+    mesh=bpy.data.meshes.new(name+"Mesh")
+    mesh.from_pydata(verts,[],faces)
+    mesh.update()
+    obj=bpy.data.objects.new(name,mesh)
+    bpy.context.collection.objects.link(obj)
+    obj.data.materials.append(mat)
+    bev=obj.modifiers.new("BootRound","BEVEL")
+    bev.width=0.055
+    bev.segments=5
+    sub=obj.modifiers.new("BootSmooth","SUBSURF")
+    sub.levels=1
+    sub.render_levels=1
+    for p in obj.data.polygons:
+        p.use_smooth=True
+    return obj
+
 for side,sign in (("L",-1),("R",1)):
     shin=bone_world(f"shin.{side}")
-    x=0.17*sign
+    x=0.18*sign
     if shin:
         knee,ankle=shin
         x=ankle.x
-        top=ankle.lerp(knee,0.72)
+        top=ankle.lerp(knee,0.62)
     else:
-        ankle=Vector((x,0,0.10)); top=Vector((x,0,0.72))
+        ankle=Vector((x,0,0.10))
+        top=Vector((x,0,0.70))
     cone_between(
         f"Traveler_BootShaft_{side}",
-        ankle+Vector((0,0,0.06)),top,
-        0.182,0.165,boots_mat
+        ankle+Vector((0,0,0.055)),top,
+        0.190,0.170,boots_mat
     )
-    boot_foot=rounded_box(
-        f"Traveler_BootFoot_{side}",
-        (x,-0.145,0.105),(0.34,0.56,0.215),
-        boots_mat,bevel=0.060
-    )
-    sub=boot_foot.modifiers.new("BootSmooth","SUBSURF")
-    sub.levels=1
-    sub.render_levels=1
+    boot_wedge(f"Traveler_BootFoot_{side}",x,boots_mat)
 
-# Cross-body leather strap, close to the shirt/vest surface.
-curve_strap(
+# Flat leather cross-body strap, not a round rope.
+def flat_strap(name,points,width,mat):
+    pts=[Vector(p) for p in points]
+    verts=[]; faces=[]
+    for i,p in enumerate(pts):
+        if i==0:
+            tangent=(pts[1]-pts[0]).normalized()
+        elif i==len(pts)-1:
+            tangent=(pts[-1]-pts[-2]).normalized()
+        else:
+            tangent=(pts[i+1]-pts[i-1]).normalized()
+        side=Vector((1,0,0))
+        if abs(tangent.dot(side))>0.90:
+            side=Vector((0,0,1))
+        side=(side-tangent*tangent.dot(side)).normalized()
+        verts.append(tuple(p-side*width*0.5))
+        verts.append(tuple(p+side*width*0.5))
+    for i in range(len(pts)-1):
+        a=i*2
+        faces.append((a,a+1,a+3,a+2))
+    mesh=bpy.data.meshes.new(name+"Mesh")
+    mesh.from_pydata(verts,[],faces)
+    mesh.update()
+    obj=bpy.data.objects.new(name,mesh)
+    bpy.context.collection.objects.link(obj)
+    obj.data.materials.append(mat)
+    solid=obj.modifiers.new("StrapThickness","SOLIDIFY")
+    solid.thickness=0.018
+    solid.offset=0.0
+    bev=obj.modifiers.new("StrapEdges","BEVEL")
+    bev.width=0.008
+    bev.segments=2
+    return obj
+
+flat_strap(
     "Traveler_CrossBodyStrap",
-    [(-0.28,-0.365,2.70),(-0.13,-0.385,2.38),(0.04,-0.390,2.06),(0.22,-0.350,1.75)],
-    0.020,strap_mat
+    [(-0.30,-0.40,2.73),(-0.14,-0.42,2.40),(0.04,-0.42,2.06),(0.24,-0.37,1.73)],
+    0.080,strap_mat
 )
 
-# Dark hair cap with the forehead and face left open.
-bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=24, location=(0.0,0.035,3.40))
+# Compact dark hair cap with curved strands, no side-sphere "ears".
+bpy.ops.mesh.primitive_uv_sphere_add(segments=48,ring_count=24,location=(0.0,0.045,3.40))
 hair=bpy.context.active_object
 hair.name="Traveler_Hair"
-hair.scale=(0.295,0.265,0.165)
+hair.scale=(0.285,0.250,0.145)
 bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
 
 bm=bmesh.new()
@@ -507,54 +554,30 @@ bm.verts.ensure_lookup_table()
 delete=[]
 for v in bm.verts:
     p=hair.matrix_world @ v.co
-    # remove lower half and open the front/forehead
-    if p.z < 3.31 or (p.y < -0.09 and p.z < 3.48):
+    if p.z<3.31 or (p.y<-0.08 and p.z<3.48):
         delete.append(v)
 bmesh.ops.delete(bm,geom=delete,context="VERTS")
 bm.to_mesh(hair.data)
 bm.free()
 hair.data.update()
 hair.data.materials.append(hair_mat)
-hair_tex=bpy.data.textures.get("TravelerHairNoise") or bpy.data.textures.new("TravelerHairNoise",type="CLOUDS")
-hair_tex.noise_scale=0.10
-disp=hair.modifiers.new("HairTexture","DISPLACE")
-disp.texture=hair_tex
-disp.strength=0.015
-disp.mid_level=0.5
 solid=hair.modifiers.new("HairThickness","SOLIDIFY")
-solid.thickness=0.025
+solid.thickness=0.020
 solid.offset=1.0
-for poly in hair.data.polygons:
-    poly.use_smooth=True
+for p in hair.data.polygons:
+    p.use_smooth=True
 
-# Side/back locks give a slightly wavy silhouette without blocking the face.
-for x,y,z,sc in [
-    (-0.22,0.04,3.32,(0.060,0.080,0.140)),
-    (0.22,0.04,3.32,(0.060,0.080,0.140)),
-    (-0.16,0.12,3.30,(0.070,0.060,0.125)),
-    (0.16,0.12,3.30,(0.070,0.060,0.125)),
-]:
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=24,ring_count=12,location=(x,y,z))
-    lock=bpy.context.active_object
-    lock.name="Traveler_HairLock"
-    lock.scale=sc
-    bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
-    lock.data.materials.append(hair_mat)
-    for poly in lock.data.polygons:
-        poly.use_smooth=True
-
-# Curved dark locks break up the cap silhouette.
 for i,pts in enumerate([
-    [(-0.18,-0.03,3.49),(-0.21,0.00,3.42),(-0.23,0.04,3.33)],
-    [(-0.09,-0.05,3.51),(-0.13,0.00,3.43),(-0.16,0.07,3.32)],
-    [(0.09,-0.05,3.51),(0.13,0.00,3.43),(0.16,0.07,3.32)],
-    [(0.18,-0.03,3.49),(0.21,0.00,3.42),(0.23,0.04,3.33)],
-    [(-0.13,0.05,3.52),(-0.15,0.12,3.42),(-0.12,0.16,3.31)],
-    [(0.13,0.05,3.52),(0.15,0.12,3.42),(0.12,0.16,3.31)],
+    [(-0.20,-0.03,3.49),(-0.22,0.01,3.40),(-0.23,0.05,3.31)],
+    [(-0.11,-0.05,3.51),(-0.15,0.00,3.42),(-0.17,0.07,3.31)],
+    [(0.11,-0.05,3.51),(0.15,0.00,3.42),(0.17,0.07,3.31)],
+    [(0.20,-0.03,3.49),(0.22,0.01,3.40),(0.23,0.05,3.31)],
+    [(-0.14,0.05,3.52),(-0.16,0.12,3.41),(-0.13,0.17,3.30)],
+    [(0.14,0.05,3.52),(0.16,0.12,3.41),(0.13,0.17,3.30)],
 ]):
-    curve_strap(f"Traveler_HairStrand_{i}",pts,0.014,hair_mat)
+    curve_strap(f"Traveler_HairStrand_{i}",pts,0.012,hair_mat)
 
-print("traveler_outfit_v13_created")
+print("traveler_outfit_v14_created")
 
 # ---------- studio ----------
 bpy.ops.mesh.primitive_plane_add(size=14,location=(0,0,0))
