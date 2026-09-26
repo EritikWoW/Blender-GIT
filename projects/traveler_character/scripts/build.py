@@ -350,6 +350,9 @@ def arc_garment(name,z_levels,clearance,mat,gap_func,segments=64,front_bias=0.0,
     obj=bpy.data.objects.new(name,mesh)
     bpy.context.collection.objects.link(obj)
     obj.data.materials.append(mat)
+    sub=obj.modifiers.new("GarmentSubdivision","SUBSURF")
+    sub.levels=1
+    sub.render_levels=1
     solid=obj.modifiers.new("Thickness","SOLIDIFY")
     solid.thickness=thickness
     solid.offset=1.0
@@ -364,12 +367,9 @@ def arc_garment(name,z_levels,clearance,mat,gap_func,segments=64,front_bias=0.0,
 shirt_gap=lambda z: 0.018 if z<2.54 else min(0.16,0.018+(z-2.54)*0.38)
 shirt_torso=arc_garment(
     "Traveler_ShirtTorso",
-    [1.34,1.52,1.74,1.98,2.22,2.44,2.62,2.78,2.92],
+    [1.34,1.52,1.74,1.98,2.22,2.44,2.60,2.74,2.86],
     0.022,shirt_mat,shirt_gap,segments=72,front_bias=-0.003,thickness=0.018
 )
-
-# Close the lower shirt front; only the upper chest remains open.
-panel_grid("Traveler_ShirtFront",-0.20,0.20,1.38,2.46,-0.375,shirt_mat,front=True,nx=10,nz=20)
 
 # Separate loose sleeves, aligned to actual arm bones.
 for side in ("L","R"):
@@ -397,7 +397,7 @@ def vest_gap(z):
 
 vest=arc_garment(
     "Traveler_Vest",
-    [1.86,1.98,2.12,2.26,2.40,2.54,2.66,2.72],
+    [1.86,1.98,2.12,2.26,2.40,2.52,2.62,2.68],
     0.032,vest_mat,vest_gap,segments=72,front_bias=0.000,thickness=0.022
 )
 
@@ -481,6 +481,12 @@ bm.to_mesh(hair.data)
 bm.free()
 hair.data.update()
 hair.data.materials.append(hair_mat)
+hair_tex=bpy.data.textures.get("TravelerHairNoise") or bpy.data.textures.new("TravelerHairNoise",type="CLOUDS")
+hair_tex.noise_scale=0.10
+disp=hair.modifiers.new("HairTexture","DISPLACE")
+disp.texture=hair_tex
+disp.strength=0.015
+disp.mid_level=0.5
 solid=hair.modifiers.new("HairThickness","SOLIDIFY")
 solid.thickness=0.025
 solid.offset=1.0
@@ -503,7 +509,7 @@ for x,y,z,sc in [
     for poly in lock.data.polygons:
         poly.use_smooth=True
 
-print("traveler_outfit_v10_created")
+print("traveler_outfit_v11_created")
 
 # ---------- studio ----------
 bpy.ops.mesh.primitive_plane_add(size=14,location=(0,0,0))
@@ -544,4 +550,4 @@ for window in bpy.context.window_manager.windows:
 
 blend_path=OUTPUT_DIR/"traveler_character_outfit.blend"
 bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
-print("traveler_outfit_v10_done",blend_path)
+print("traveler_outfit_v11_done",blend_path)
