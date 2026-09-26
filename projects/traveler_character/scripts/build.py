@@ -267,7 +267,7 @@ def elliptic_band(name,z0,z1,clearance,mat,segments=48):
     levels=[z0,(z0+z1)*0.5,z1]
     verts=[]; faces=[]
     for z in levels:
-        x0,x1,y0,y1=section_bounds(z)
+        x0,x1,y0,y1=torso_section(z,x_limit=0.48)
         cx=(x0+x1)*0.5; cy=(y0+y1)*0.5
         rx=(x1-x0)*0.5+clearance; ry=(y1-y0)*0.5+clearance
         for i in range(segments):
@@ -390,6 +390,47 @@ shirt=torso_arc(
     0.030,shirt_mat,shirt_gap,segments=72,thickness=0.018
 )
 
+# Close the lower front seam; the actual neckline stays open above 2.58.
+def shirt_front_patch():
+    nx=10
+    nz=20
+    z0=1.36
+    z1=2.58
+    verts=[]
+    faces=[]
+    for iz in range(nz+1):
+        z=z0+(z1-z0)*iz/nz
+        x0,x1,y0,y1=torso_section(z)
+        front_y=y0-0.020
+        half=0.19-(0.035*(iz/nz))
+        for ix in range(nx+1):
+            x=-half+(2*half)*ix/nx
+            verts.append((x,front_y,z))
+    for iz in range(nz):
+        for ix in range(nx):
+            a=iz*(nx+1)+ix
+            faces.append((a,a+1,a+1+(nx+1),a+(nx+1)))
+    mesh=bpy.data.meshes.new("Traveler_ShirtFrontPatchMesh")
+    mesh.from_pydata(verts,[],faces)
+    mesh.update()
+    obj=bpy.data.objects.new("Traveler_ShirtFrontPatch",mesh)
+    bpy.context.collection.objects.link(obj)
+    obj.data.materials.append(shirt_mat)
+    shrink=obj.modifiers.new("FitFrontToBody","SHRINKWRAP")
+    shrink.target=body
+    shrink.wrap_method="NEAREST_SURFACEPOINT"
+    shrink.wrap_mode="OUTSIDE"
+    shrink.offset=0.038
+    sub=obj.modifiers.new("PatchSmooth","SUBSURF")
+    sub.levels=1
+    sub.render_levels=1
+    solid=obj.modifiers.new("PatchThickness","SOLIDIFY")
+    solid.thickness=0.016
+    solid.offset=1.0
+    return obj
+
+shirt_front_patch()
+
 # Long loose sleeves overlap the shoulders and stay continuous to the cuffs.
 for side in ("L","R"):
     upper=bone_world(f"upper_arm.{side}")
@@ -445,8 +486,6 @@ for side in ("L","R"):
         )
 
 # Dark waist bridge joins both trouser legs under the sash.
-elliptic_band("Traveler_PantsWaist",1.42,1.62,0.055,pants_mat)
-
 # Wrapped cloth sash: three irregular overlapping bands, no rigid plank.
 def wrapped_band(name,z0,z1,clearance,phase):
     levels=[z0,(z0+z1)*0.5,z1]
@@ -485,9 +524,9 @@ def wrapped_band(name,z0,z1,clearance,phase):
         p.use_smooth=True
     return obj
 
-wrapped_band("Traveler_Sash_1",1.55,1.63,0.090,0.2)
-wrapped_band("Traveler_Sash_2",1.61,1.69,0.105,1.4)
-wrapped_band("Traveler_Sash_3",1.67,1.76,0.095,2.5)
+wrapped_band("Traveler_Sash_1",1.56,1.63,0.050,0.2)
+wrapped_band("Traveler_Sash_2",1.62,1.69,0.060,1.4)
+wrapped_band("Traveler_Sash_3",1.68,1.75,0.055,2.5)
 
 rounded_box(
     "Traveler_SashTail_A",(0.10,-0.34,1.38),(0.12,0.038,0.48),
@@ -627,7 +666,7 @@ for i,pts in enumerate([
 ]):
     curve_strap(f"Traveler_HairStrand_{i}",pts,0.012,hair_mat)
 
-print("traveler_outfit_v15_created")
+print("traveler_outfit_v16_created")
 
 # ---------- studio ----------
 bpy.ops.mesh.primitive_plane_add(size=14,location=(0,0,0))
@@ -644,11 +683,11 @@ def look_at(obj,target):
     obj.rotation_euler=(Vector(target)-obj.location).to_track_quat("-Z","Y").to_euler()
 
 bpy.ops.object.light_add(type="AREA",location=(3.0,-4.2,5.0))
-key=bpy.context.active_object; key.data.energy=120; key.data.size=4.0; key.data.color=(1.0,0.90,0.78); look_at(key,(0,0,1.8))
+key=bpy.context.active_object; key.data.energy=190; key.data.size=4.0; key.data.color=(1.0,0.90,0.78); look_at(key,(0,0,1.8))
 bpy.ops.object.light_add(type="AREA",location=(-3.2,-1.0,3.8))
-fill=bpy.context.active_object; fill.data.energy=45; fill.data.size=3.5; fill.data.color=(0.42,0.55,1.0); look_at(fill,(0,0,1.75))
+fill=bpy.context.active_object; fill.data.energy=70; fill.data.size=3.5; fill.data.color=(0.42,0.55,1.0); look_at(fill,(0,0,1.75))
 bpy.ops.object.light_add(type="AREA",location=(0.5,3.7,4.5))
-rim=bpy.context.active_object; rim.data.energy=70; rim.data.size=2.8; rim.data.color=(0.25,0.45,1.0); look_at(rim,(0,0,2.0))
+rim=bpy.context.active_object; rim.data.energy=95; rim.data.size=2.8; rim.data.color=(0.25,0.45,1.0); look_at(rim,(0,0,2.0))
 
 bpy.ops.object.camera_add(location=(0,-6.6,2.02))
 cam=bpy.context.active_object; cam.name="Camera"; cam.data.lens=58; scene.camera=cam
