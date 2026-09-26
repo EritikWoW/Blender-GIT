@@ -324,63 +324,110 @@ def curve_strap(name,points,radius,mat):
     return o
 
 # ---------- outfit ----------
-# Shirt body: real body-derived shell, with only the neckline opened.
-def shirt_neck_gap(z):
-    if z < 2.58:
-        return 0.0
-    return min(0.145, (z - 2.58) * 0.36)
+# Smooth torso-section helper for clean cloth surfaces.
+def torso_section(z,window=0.045,x_limit=0.52):
+    pts=[]
+    for v in body.data.vertices:
+        p=wpos(v.co)
+        if abs(p.z-z)<=window and abs(p.x)<=x_limit:
+            pts.append(p)
+    if len(pts)<12:
+        candidates=[wpos(v.co) for v in body.data.vertices if abs(wpos(v.co).x)<=x_limit]
+        pts=sorted(candidates,key=lambda p:abs(p.z-z))[:96]
+    return min(p.x for p in pts),max(p.x for p in pts),min(p.y for p in pts),max(p.y for p in pts)
 
-shirt = shell_from_body(
+def torso_arc(name,z_levels,clearance,mat,gap_func,segments=72,thickness=0.020):
+    verts=[]; faces=[]
+    pts_per=segments+1
+    for z in z_levels:
+        x0,x1,y0,y1=torso_section(z)
+        cx=(x0+x1)*0.5
+        cy=(y0+y1)*0.5
+        rx=(x1-x0)*0.5+clearance
+        ry=(y1-y0)*0.5+clearance
+        gap=max(0.0,float(gap_func(z)))
+        start=-math.pi/2+gap
+        end=3*math.pi/2-gap
+        for i in range(pts_per):
+            u=i/segments
+            ang=start+(end-start)*u
+            verts.append((cx+math.cos(ang)*rx,cy+math.sin(ang)*ry,z))
+    for r in range(len(z_levels)-1):
+        for i in range(segments):
+            p0=r*pts_per+i
+            p1=p0+1
+            p2=(r+1)*pts_per+i+1
+            p3=(r+1)*pts_per+i
+            faces.append((p0,p1,p2,p3))
+    mesh=bpy.data.meshes.new(name+"Mesh")
+    mesh.from_pydata(verts,[],faces)
+    mesh.update()
+    obj=bpy.data.objects.new(name,mesh)
+    bpy.context.collection.objects.link(obj)
+    obj.data.materials.append(mat)
+    sub=obj.modifiers.new("ClothSubdivision","SUBSURF")
+    sub.levels=1
+    sub.render_levels=1
+    solid=obj.modifiers.new("ClothThickness","SOLIDIFY")
+    solid.thickness=thickness
+    solid.offset=1.0
+    bev=obj.modifiers.new("SoftEdges","BEVEL")
+    bev.width=0.010
+    bev.segments=3
+    for p in obj.data.polygons:
+        p.use_smooth=True
+    return obj
+
+# Linen shirt: fully closed over the abdomen, open only at the upper chest.
+def shirt_gap(z):
+    if z<2.58:
+        return 0.0
+    return min(0.18,(z-2.58)*0.46)
+
+shirt=torso_arc(
     "Traveler_Shirt",
-    ("spine","shoulder"),
-    1.34,2.98,
-    shirt_mat,0.035,0.018,
-    front_gap_func=shirt_neck_gap,
-    front_y=-0.11
+    [1.34,1.50,1.68,1.88,2.08,2.28,2.46,2.62,2.76,2.88],
+    0.030,shirt_mat,shirt_gap,segments=72,thickness=0.018
 )
 
-# Sleeves: one continuous loose tube per arm, so no bare elbow/upper-arm gaps.
+# Long loose sleeves overlap the shoulders and stay continuous to the cuffs.
 for side in ("L","R"):
     upper=bone_world(f"upper_arm.{side}")
     fore=bone_world(f"forearm.{side}")
     if upper and fore:
         shoulder,elbow=upper
         _,wrist=fore
-        arm_vec=(wrist-shoulder).normalized()
-        sleeve=cone_between(
+        vec=(wrist-shoulder).normalized()
+        cone_between(
             f"Traveler_ShirtSleeve_{side}",
-            shoulder-arm_vec*0.06,
-            wrist+arm_vec*0.025,
-            0.255,0.145,shirt_mat
+            shoulder-vec*0.10,
+            wrist+vec*0.025,
+            0.290,0.150,shirt_mat
         )
-        # rolled cuff near wrist
         cuff_center=wrist.lerp(elbow,0.14)
         axis=(elbow-wrist).normalized()
         cone_between(
             f"Traveler_Cuff_{side}",
-            cuff_center-axis*0.050,
-            cuff_center+axis*0.050,
-            0.155,0.155,shirt_mat
+            cuff_center-axis*0.052,
+            cuff_center+axis*0.052,
+            0.158,0.158,shirt_mat
         )
 
-# Vest: fitted shell from the real torso, split open down the front.
-def vest_front_gap(z):
-    if z < 2.28:
-        return 0.13
-    return min(0.27,0.13+(z-2.28)*0.28)
+# Dark sleeveless vest: clearly open at the front with shirt visible between the panels.
+def vest_gap(z):
+    if z<2.28:
+        return 0.48
+    return min(0.78,0.48+(z-2.28)*0.60)
 
-vest = shell_from_body(
+vest=torso_arc(
     "Traveler_Vest",
-    ("spine","shoulder"),
-    1.46,2.83,
-    vest_mat,0.065,0.022,
-    front_gap_func=vest_front_gap,
-    front_y=-0.10
+    [1.48,1.62,1.80,2.00,2.20,2.38,2.54,2.68,2.78],
+    0.055,vest_mat,vest_gap,segments=72,thickness=0.022
 )
 
-# Add slightly longer dark side tails, matching the reference silhouette.
-rounded_box("Traveler_VestTail_L",(-0.33,0.04,1.46),(0.24,0.22,0.62),vest_mat,rot=(math.radians(2),0,math.radians(-3)),bevel=0.035)
-rounded_box("Traveler_VestTail_R",(0.33,0.04,1.46),(0.24,0.22,0.62),vest_mat,rot=(math.radians(2),0,math.radians(3)),bevel=0.035)
+# Long side tails of the vest.
+rounded_box("Traveler_VestTail_L",(-0.34,0.05,1.45),(0.22,0.18,0.58),vest_mat,rot=(math.radians(2),0,math.radians(-3)),bevel=0.035)
+rounded_box("Traveler_VestTail_R",(0.34,0.05,1.45),(0.22,0.18,0.58),vest_mat,rot=(math.radians(2),0,math.radians(3)),bevel=0.035)
 
 # Pants: one continuous baggy tapered tube per leg, tucked into the boots.
 for side in ("L","R"):
@@ -394,8 +441,11 @@ for side in ("L","R"):
             f"Traveler_Pants_{side}",
             hip-leg_vec*0.03,
             ankle+leg_vec*0.11,
-            0.325,0.205,pants_mat
+            0.375,0.220,pants_mat
         )
+
+# Dark waist bridge joins both trouser legs under the sash.
+elliptic_band("Traveler_PantsWaist",1.42,1.62,0.055,pants_mat)
 
 # Wrapped cloth sash: three irregular overlapping bands, no rigid plank.
 def wrapped_band(name,z0,z1,clearance,phase):
@@ -545,7 +595,7 @@ flat_strap(
 bpy.ops.mesh.primitive_uv_sphere_add(segments=48,ring_count=24,location=(0.0,0.045,3.40))
 hair=bpy.context.active_object
 hair.name="Traveler_Hair"
-hair.scale=(0.285,0.250,0.145)
+hair.scale=(0.272,0.238,0.130)
 bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
 
 bm=bmesh.new()
@@ -577,7 +627,7 @@ for i,pts in enumerate([
 ]):
     curve_strap(f"Traveler_HairStrand_{i}",pts,0.012,hair_mat)
 
-print("traveler_outfit_v14_created")
+print("traveler_outfit_v15_created")
 
 # ---------- studio ----------
 bpy.ops.mesh.primitive_plane_add(size=14,location=(0,0,0))
