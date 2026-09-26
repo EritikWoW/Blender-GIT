@@ -379,7 +379,7 @@ def shirt_gap(z):
 
 shirt=torso_arc(
     "Traveler_Shirt",
-    [1.34,1.50,1.68,1.88,2.08,2.28,2.46,2.62,2.76,2.88],
+    [1.50,1.64,1.82,2.00,2.18,2.36,2.52,2.66,2.80,2.94],
     0.030,shirt_mat,shirt_gap,segments=72,thickness=0.018
 )
 
@@ -387,15 +387,15 @@ shirt=torso_arc(
 def shirt_front_patch():
     nx=10
     nz=20
-    z0=1.36
-    z1=2.58
+    z0=1.52
+    z1=2.56
     verts=[]
     faces=[]
     for iz in range(nz+1):
         z=z0+(z1-z0)*iz/nz
         x0,x1,y0,y1=torso_section(z)
         front_y=y0-0.020
-        half=0.19-(0.035*(iz/nz))
+        half=0.040-(0.010*(iz/nz))
         for ix in range(nx+1):
             x=-half+(2*half)*ix/nx
             verts.append((x,front_y,z))
@@ -447,6 +447,15 @@ for side in ("L","R"):
             0.145,0.145,shirt_mat
         )
 
+# Smooth shoulder yoke covers the clavicles and joins the sleeves.
+def yoke_gap(z):
+    return min(0.20,max(0.06,(z-2.78)*0.55+0.06))
+shirt_yoke=torso_arc(
+    "Traveler_ShirtYoke",
+    [2.76,2.84,2.92,2.98],
+    0.038,shirt_mat,yoke_gap,segments=72,thickness=0.018
+)
+
 # Dark sleeveless vest: clearly open at the front with shirt visible between the panels.
 def vest_gap(z):
     if z<2.20:
@@ -475,6 +484,45 @@ for side in ("L","R"):
         )
 
 # Dark waist bridge joins both trouser legs under the sash.
+# Fitted hip section closes the gap between both trouser legs beneath the sash.
+def pants_hip_band():
+    zs=[1.50,1.62,1.76,1.90]
+    segments=64
+    verts=[]; faces=[]
+    for z in zs:
+        x0,x1,y0,y1=torso_section(z,x_limit=0.48)
+        cx=(x0+x1)*0.5
+        cy=(y0+y1)*0.5
+        rx=(x1-x0)*0.5+0.025
+        ry=(y1-y0)*0.5+0.025
+        for i in range(segments):
+            a=2*math.pi*i/segments
+            verts.append((cx+math.cos(a)*rx,cy+math.sin(a)*ry,z))
+    for r in range(len(zs)-1):
+        for i in range(segments):
+            a=r*segments+i
+            b=r*segments+(i+1)%segments
+            c=(r+1)*segments+(i+1)%segments
+            d=(r+1)*segments+i
+            faces.append((a,b,c,d))
+    mesh=bpy.data.meshes.new("Traveler_PantsHipMesh")
+    mesh.from_pydata(verts,[],faces)
+    mesh.update()
+    obj=bpy.data.objects.new("Traveler_PantsHip",mesh)
+    bpy.context.collection.objects.link(obj)
+    obj.data.materials.append(pants_mat)
+    solid=obj.modifiers.new("PantsHipThickness","SOLIDIFY")
+    solid.thickness=0.018
+    solid.offset=1.0
+    sub=obj.modifiers.new("PantsHipSmooth","SUBSURF")
+    sub.levels=1
+    sub.render_levels=1
+    for p in obj.data.polygons:
+        p.use_smooth=True
+    return obj
+
+pants_hip_band()
+
 # Wrapped cloth sash: three irregular overlapping bands, no rigid plank.
 def wrapped_band(name,z0,z1,clearance,phase):
     levels=[z0,(z0+z1)*0.5,z1]
@@ -527,13 +575,13 @@ rounded_box(
 
 # Boots: tall shafts plus a rounded wedge-shaped foot.
 def boot_wedge(name,x,mat):
-    y_back=0.10
-    y_front=-0.38
-    z0=0.02
-    z_back=0.20
-    z_front=0.12
-    hw_back=0.16
-    hw_front=0.135
+    y_back=0.16
+    y_front=-0.48
+    z0=-0.015
+    z_back=0.23
+    z_front=0.14
+    hw_back=0.17
+    hw_front=0.15
     verts=[
         (x-hw_back,y_back,z0),(x+hw_back,y_back,z0),
         (x+hw_front,y_front,z0),(x-hw_front,y_front,z0),
@@ -622,7 +670,7 @@ flat_strap(
 bpy.ops.mesh.primitive_uv_sphere_add(segments=48,ring_count=24,location=(0.0,0.045,3.40))
 hair=bpy.context.active_object
 hair.name="Traveler_Hair"
-hair.scale=(0.255,0.225,0.118)
+hair.scale=(0.245,0.218,0.112)
 bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
 
 bm=bmesh.new()
@@ -645,16 +693,17 @@ for p in hair.data.polygons:
     p.use_smooth=True
 
 for i,pts in enumerate([
-    [(-0.20,-0.03,3.49),(-0.22,0.01,3.40),(-0.23,0.05,3.31)],
-    [(-0.11,-0.05,3.51),(-0.15,0.00,3.42),(-0.17,0.07,3.31)],
-    [(0.11,-0.05,3.51),(0.15,0.00,3.42),(0.17,0.07,3.31)],
-    [(0.20,-0.03,3.49),(0.22,0.01,3.40),(0.23,0.05,3.31)],
-    [(-0.14,0.05,3.52),(-0.16,0.12,3.41),(-0.13,0.17,3.30)],
-    [(0.14,0.05,3.52),(0.16,0.12,3.41),(0.13,0.17,3.30)],
+    [(-0.17,-0.04,3.49),(-0.19,0.00,3.40),(-0.20,0.04,3.32)],
+    [(-0.08,-0.06,3.51),(-0.10,-0.01,3.43),(-0.12,0.05,3.34)],
+    [(0.00,-0.07,3.52),(0.01,-0.01,3.45),(0.00,0.05,3.36)],
+    [(0.08,-0.06,3.51),(0.10,-0.01,3.43),(0.12,0.05,3.34)],
+    [(0.17,-0.04,3.49),(0.19,0.00,3.40),(0.20,0.04,3.32)],
+    [(-0.11,0.06,3.50),(-0.13,0.11,3.41),(-0.11,0.15,3.32)],
+    [(0.11,0.06,3.50),(0.13,0.11,3.41),(0.11,0.15,3.32)],
 ]):
     curve_strap(f"Traveler_HairStrand_{i}",pts,0.012,hair_mat)
 
-print("traveler_outfit_v18_created")
+print("traveler_outfit_v19_created")
 
 # ---------- studio ----------
 bpy.ops.mesh.primitive_plane_add(size=14,location=(0,0,0))
@@ -695,4 +744,4 @@ for window in bpy.context.window_manager.windows:
 
 blend_path=OUTPUT_DIR/"traveler_character_outfit.blend"
 bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
-print("traveler_outfit_v18_done",blend_path)
+print("traveler_outfit_v19_done",blend_path)
