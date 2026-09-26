@@ -447,15 +447,6 @@ for side in ("L","R"):
             0.145,0.145,shirt_mat
         )
 
-# Smooth shoulder yoke covers the clavicles and joins the sleeves.
-def yoke_gap(z):
-    return min(0.20,max(0.06,(z-2.78)*0.55+0.06))
-shirt_yoke=torso_arc(
-    "Traveler_ShirtYoke",
-    [2.76,2.84,2.92,2.98],
-    0.038,shirt_mat,yoke_gap,segments=72,thickness=0.018
-)
-
 # Dark sleeveless vest: clearly open at the front with shirt visible between the panels.
 def vest_gap(z):
     if z<2.20:
@@ -523,6 +514,45 @@ def pants_hip_band():
 
 pants_hip_band()
 
+# Continuous dark hip section joins both trouser legs beneath the sash.
+def pants_hip_shell():
+    zs=[1.56,1.68,1.82,1.94]
+    segments=64
+    verts=[]; faces=[]
+    for z in zs:
+        x0,x1,y0,y1=torso_section(z,x_limit=0.48)
+        cx=(x0+x1)*0.5
+        cy=(y0+y1)*0.5
+        rx=(x1-x0)*0.5+0.018
+        ry=(y1-y0)*0.5+0.018
+        for i in range(segments):
+            a=2*math.pi*i/segments
+            verts.append((cx+math.cos(a)*rx,cy+math.sin(a)*ry,z))
+    for r in range(len(zs)-1):
+        for i in range(segments):
+            a=r*segments+i
+            b=r*segments+(i+1)%segments
+            c=(r+1)*segments+(i+1)%segments
+            d=(r+1)*segments+i
+            faces.append((a,b,c,d))
+    mesh=bpy.data.meshes.new("Traveler_PantsHipMesh")
+    mesh.from_pydata(verts,[],faces)
+    mesh.update()
+    obj=bpy.data.objects.new("Traveler_PantsHip",mesh)
+    bpy.context.collection.objects.link(obj)
+    obj.data.materials.append(pants_mat)
+    sub=obj.modifiers.new("HipSmooth","SUBSURF")
+    sub.levels=1
+    sub.render_levels=1
+    solid=obj.modifiers.new("HipThickness","SOLIDIFY")
+    solid.thickness=0.016
+    solid.offset=1.0
+    for p in obj.data.polygons:
+        p.use_smooth=True
+    return obj
+
+pants_hip_shell()
+
 # Wrapped cloth sash: three irregular overlapping bands, no rigid plank.
 def wrapped_band(name,z0,z1,clearance,phase):
     levels=[z0,(z0+z1)*0.5,z1]
@@ -561,15 +591,15 @@ def wrapped_band(name,z0,z1,clearance,phase):
         p.use_smooth=True
     return obj
 
-wrapped_band("Traveler_Sash_1",1.58,1.65,0.032,0.2)
-wrapped_band("Traveler_Sash_2",1.64,1.72,0.040,1.4)
+wrapped_band("Traveler_Sash_1",1.59,1.65,0.024,0.2)
+wrapped_band("Traveler_Sash_2",1.64,1.71,0.030,1.4)
 
 rounded_box(
-    "Traveler_SashTail_A",(0.09,-0.31,1.42),(0.10,0.032,0.40),
+    "Traveler_SashTail_A",(0.08,-0.28,1.43),(0.10,0.032,0.40),
     sash_mat,rot=(math.radians(5),math.radians(-2),math.radians(9)),bevel=0.018
 )
 rounded_box(
-    "Traveler_SashTail_B",(-0.02,-0.31,1.39),(0.085,0.030,0.34),
+    "Traveler_SashTail_B",(-0.02,-0.28,1.40),(0.085,0.030,0.34),
     sash_mat,rot=(math.radians(-4),math.radians(2),math.radians(-8)),bevel=0.018
 )
 
@@ -666,11 +696,23 @@ flat_strap(
     0.060,strap_mat
 )
 
+# Small linen shoulder seams bridge shirt torso and sleeves without a bulky yoke.
+flat_strap(
+    "Traveler_ShoulderCloth_L",
+    [(-0.08,-0.03,2.90),(-0.23,-0.01,2.90),(-0.39,0.05,2.86)],
+    0.115,shirt_mat
+)
+flat_strap(
+    "Traveler_ShoulderCloth_R",
+    [(0.08,-0.03,2.90),(0.23,-0.01,2.90),(0.39,0.05,2.86)],
+    0.115,shirt_mat
+)
+
 # Compact dark hair cap with curved strands, no side-sphere "ears".
 bpy.ops.mesh.primitive_uv_sphere_add(segments=48,ring_count=24,location=(0.0,0.045,3.40))
 hair=bpy.context.active_object
 hair.name="Traveler_Hair"
-hair.scale=(0.245,0.218,0.112)
+hair.scale=(0.235,0.210,0.108)
 bpy.ops.object.transform_apply(location=False,rotation=False,scale=True)
 
 bm=bmesh.new()
@@ -703,7 +745,7 @@ for i,pts in enumerate([
 ]):
     curve_strap(f"Traveler_HairStrand_{i}",pts,0.012,hair_mat)
 
-print("traveler_outfit_v19_created")
+print("traveler_outfit_v20_created")
 
 # ---------- studio ----------
 bpy.ops.mesh.primitive_plane_add(size=14,location=(0,0,0))
@@ -744,4 +786,4 @@ for window in bpy.context.window_manager.windows:
 
 blend_path=OUTPUT_DIR/"traveler_character_outfit.blend"
 bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
-print("traveler_outfit_v19_done",blend_path)
+print("traveler_outfit_v20_done",blend_path)
